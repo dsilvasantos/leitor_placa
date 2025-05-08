@@ -21,10 +21,11 @@ def limpar_placas():
 
 
 # Inicializações
-model = YOLO('yolov8n.pt')
-model.verbose = False
-reader = easyocr.Reader(['pt', 'en'])
-cap = cv2.VideoCapture(1)
+modelo_carro = YOLO('modelo_carro.pt')
+modelo_placa = YOLO('modelo_placa.pt')
+
+reader = easyocr.Reader(['pt'])
+cap = cv2.VideoCapture(0)
 limpar_placas()
 
 if not cap.isOpened():
@@ -56,64 +57,87 @@ def registrar_captura(placa, status):
         print(f"Exceção ao registrar captura: {e}")
 
 
+import cv2
+import re
+from datetime import datetime
+
 def detectar_placas(frame):
-    results = model(frame)
-    
+    results = modelo_carro(frame)
+
     for r in results:
         for box, cls in zip(r.boxes.xyxy, r.boxes.cls):
-            if int(cls) in [2, 3, 5, 7]:
+            if int(cls) in [2, 3, 5, 7]:  # classes de veículos
                 x1, y1, x2, y2 = map(int, box)
+
                 if x1 < x2 and y1 < y2:
-                    # Expande levemente os limites da caixa
-                    x1_pad = max(0, x1 - 5)
-                    y1_pad = max(0, y1 - 5)
-                    x2_pad = min(frame.shape[1], x2 + 5)
-                    y2_pad = min(frame.shape[0], y2 + 5)
+                    roi_carro = frame[y1:y2, x1:x2]
 
-                    roi = frame[y1_pad:y2_pad, x1_pad:x2_pad]
+                    resultado_modelo_placa = modelo_placa(roi_carro)
+                    for r_placa in resultado_modelo_placa:
+                        for placa in r_placa.boxes.data.tolist():
+                            x1p, y1p, x2p, y2p, score, class_id = placa
+                            x1p, y1p, x2p, y2p = map(int, [x1p, y1p, x2p, y2p])
 
-                    # Reduz a ROI para focar só na parte interna da placa (evita molduras e fundo)
-                    h, w = roi.shape[:2]
-                    roi = roi[int(h*0.2):int(h*0.8), int(w*0.1):int(w*0.9)]
+                            x1_abs = x1 + x1p
+                            y1_abs = y1 + y1p
+                            x2_abs = x1 + x2p
+                            y2_abs = y1 + y2p
 
-                    # Aumenta resolução
-                    roi = cv2.resize(roi, None, fx=2, fy=2, interpolation=cv2.INTER_LINEAR)
+                            h, w = frame.shape[:2]
+                            x1_abs = max(0, min(x1_abs, w))
+                            x2_abs = max(0, min(x2_abs, w))
+                            y1_abs = max(0, min(y1_abs, h))
+                            y2_abs = max(0, min(y2_abs, h))
 
-                    # Pré-processamento
-                    roi_gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-                    roi_gray = cv2.bilateralFilter(roi_gray, 11, 17, 17)
+                            roi_placa = frame[y1_abs:y2_abs, x1_abs:x2_abs]
+                            if roi_placa.size == 0:
+                                continue
 
+                            # Pré-processamento para OCR em ambiente claro
+                            roi_placa_gray = cv2.cvtColor(roi_placa, cv2.COLOR_BGR2GRAY)
 
-                    resultados = reader.readtext(roi_gray)
-                    for _, texto, _ in resultados:
-                        texto = texto.upper().replace(" ", "").strip()
-                        matches = re.findall(r'[A-Z]{3}-?[0-9][A-Z0-9][0-9]{2}', texto)
-                        for placa in matches:
-                            placa = placa.replace("-", "")
-                            liberado = False
-                            status = "BLOQUEADO"
-                            if placa not in placas:
-                                liberado = verificar_placa(placa)
-                                placas[placa] = liberado
-                                status = "LIBERADO" if liberado else "BLOQUEADO"
-                                registrar_captura(placa, status)
-                            else :
-                                print("Placa já reconhecida")
+                            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+                            roi_placa_gray = clahe.apply(roi_placa_gray)
 
-                            liberado = placas[placa]
-                            status = "LIBERADO" if liberado else "BLOQUEADO"
+                            roi_placa_gray = cv2.GaussianBlur(roi_placa_gray, (3, 3), 0)
+                            roi_placa_gray = cv2.resize(roi_placa_gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
 
-                            print(f"{datetime.now()} - Placa: {placa} - {status}")
+                            roi_placa_thresh = cv2.adaptiveThreshold(
+                                roi_placa_gray, 255,
+                                cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                cv2.THRESH_BINARY,
+                                11, 2
+                            )
 
-                            cor = (0, 255, 0) if liberado else (0, 0, 255)
+                            resultados = reader.readtext(roi_placa_thresh)
+                            if not resultados:
+                                continue
 
-                            cv2.rectangle(frame, (x1, y1), (x2, y2), cor, 2)
-                            cv2.putText(frame, f"{placa} - {status}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, cor, 2)
+                            for _, texto, _ in resultados:
+                                texto = texto.upper().replace(" ", "").strip()
+                                matches = re.findall(r'[A-Z]{3}-?[0-9][A-Z0-9][0-9]{2}', texto)
 
-                            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                            cv2.putText(frame, placa, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+                                for placa in matches:
+                                    placa = placa.replace("-", "")
+                                    status = "BLOQUEADO"
+
+                                    if placa not in placas:
+                                        liberado = verificar_placa(placa)
+                                        placas[placa] = liberado
+                                        status = "LIBERADO" if liberado else "BLOQUEADO"
+                                        registrar_captura(placa, status)
+                                    else:
+                                        print("Placa já reconhecida")
+
+                                    cor = (0, 255, 0) if placas[placa] else (0, 0, 255)
+                                    cv2.rectangle(frame, (x1, y1), (x2, y2), cor, 2)
+                                    cv2.putText(frame, f"{placa} - {status}", (x1, y1 - 10),
+                                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, cor, 2)
+
+                                    print(f"{datetime.now()} - Placa: {placa} - {status}")
 
     return frame
+
 
 # Loop da câmera
 while True:
@@ -122,7 +146,16 @@ while True:
         break
 
     frame = detectar_placas(frame)
-    cv2.imshow("Reconhecimento de Placas", frame)
+
+    # Cria uma janela redimensionável
+    cv2.namedWindow("Reconhecimento de Placas", cv2.WINDOW_NORMAL)
+    # Define o tamanho desejado da janela (por exemplo, 1280x720)
+    cv2.resizeWindow("Reconhecimento de Placas", 1280, 720)
+
+    frame_ampliado = cv2.resize(frame, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_LINEAR)
+
+    # Exibe o frame
+    cv2.imshow("Reconhecimento de Placas", frame_ampliado)
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
