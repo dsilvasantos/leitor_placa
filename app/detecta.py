@@ -4,18 +4,34 @@ from ultralytics import YOLO
 import easyocr
 import requests
 from datetime import datetime
+import threading
 
 
 API_BASE = "http://localhost:8000/api/"  # URL do serviço REST
 
+placas = dict()
+
+#Classe temporal
+def limpar_placas():
+    global placas
+    placas = dict()
+    print("Placas limpas!")
+    # Agenda a próxima execução daqui 60 segundos
+    threading.Timer(60.0, limpar_placas).start()
+
+
 # Inicializações
 model = YOLO('yolov8n.pt')
+model.verbose = False
 reader = easyocr.Reader(['pt', 'en'])
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(1)
+limpar_placas()
 
 if not cap.isOpened():
     print("Erro ao acessar a câmera")
     exit()
+
+
 
 
 def verificar_placa(placa):
@@ -39,10 +55,10 @@ def registrar_captura(placa, status):
     except Exception as e:
         print(f"Exceção ao registrar captura: {e}")
 
+
 def detectar_placas(frame):
     results = model(frame)
-    placas = set()
-
+    
     for r in results:
         for box, cls in zip(r.boxes.xyxy, r.boxes.cls):
             if int(cls) in [2, 3, 5, 7]:
@@ -74,15 +90,22 @@ def detectar_placas(frame):
                         matches = re.findall(r'[A-Z]{3}-?[0-9][A-Z0-9][0-9]{2}', texto)
                         for placa in matches:
                             placa = placa.replace("-", "")
-                            placas.add(placa)
-                            
-                            liberado = verificar_placa(placa)
-                            status = "LIBERADO" if liberado else "BLOQUEADO"
-                            cor = (0, 255, 0) if liberado else (0, 0, 255)
+                            liberado = False
+                            status = "BLOQUEADO"
+                            if placa not in placas:
+                                liberado = verificar_placa(placa)
+                                placas[placa] = liberado
+                                status = "LIBERADO" if liberado else "BLOQUEADO"
+                                registrar_captura(placa, status)
+                            else :
+                                print("Placa já reconhecida")
 
-                            registrar_captura(placa, status)
+                            liberado = placas[placa]
+                            status = "LIBERADO" if liberado else "BLOQUEADO"
 
                             print(f"{datetime.now()} - Placa: {placa} - {status}")
+
+                            cor = (0, 255, 0) if liberado else (0, 0, 255)
 
                             cv2.rectangle(frame, (x1, y1), (x2, y2), cor, 2)
                             cv2.putText(frame, f"{placa} - {status}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, cor, 2)
@@ -90,7 +113,7 @@ def detectar_placas(frame):
                             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                             cv2.putText(frame, placa, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
 
-    return frame, list(placas)
+    return frame
 
 # Loop da câmera
 while True:
@@ -98,7 +121,7 @@ while True:
     if not ret:
         break
 
-    frame, placas = detectar_placas(frame)
+    frame = detectar_placas(frame)
     cv2.imshow("Reconhecimento de Placas", frame)
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
