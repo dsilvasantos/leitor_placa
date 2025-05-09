@@ -91,6 +91,7 @@ def ocr_placa(imagem_placa):
 def processar_placa(placa, frame, x1, y1, x2, y2):
     status = "BLOQUEADO"
 
+
     if placa in placas_detectadas_recentemente:
         print(f"Placa {placa} já processada recentemente")
         liberado, agora = placas_detectadas_recentemente[placa]
