@@ -8,10 +8,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 import logging
 import torch
+import time
 print(torch.__version__)
 print(torch.cuda.is_available())  
 print(torch.version.cuda)        
 print(torch.cuda.get_device_name(0))  
+
 
 API_BASE = "http://localhost:8000/api/"  # URL do serviço REST
 
@@ -19,7 +21,7 @@ API_BASE = "http://localhost:8000/api/"  # URL do serviço REST
 # Configuração
 placas_detectadas_recentemente = {}  # cache com TTL
 TTL_SEGUNDOS = 120
-
+SCORE_THRESHOLD = 0.7
 ocr_executor = ThreadPoolExecutor(max_workers=4)  
 
 
@@ -28,8 +30,13 @@ modelo_carro = YOLO('modelo_carro.pt').to('cuda')
 modelo_placa = YOLO('modelo_placa.pt').to('cuda')
 
 logging.getLogger("ultralytics").setLevel(logging.WARNING)
-reader = easyocr.Reader(['pt'], gpu=True)
+reader = easyocr.Reader(['pt'], gpu=True, detect_network="craft", verbose=False)
 cap = cv2.VideoCapture(1)
+
+# Cria uma janela redimensionável
+cv2.namedWindow("Reconhecimento de Placas", cv2.WINDOW_NORMAL)
+# Define o tamanho desejado da janela (por exemplo, 1280x720)
+cv2.resizeWindow("Reconhecimento de Placas", 800, 600)
 
 if not cap.isOpened():
     print("Erro ao acessar a câmera")
@@ -66,9 +73,9 @@ def limpar_cache_placas():
 
 def preprocessar_imagem_placa(roi_placa):
     gray = cv2.cvtColor(roi_placa, cv2.COLOR_BGR2GRAY)
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
     gray = clahe.apply(gray)
-    gray = cv2.GaussianBlur(gray, (3, 3), 0)
+    gray = cv2.GaussianBlur(gray, (5, 5), 0)
     gray = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
 
     return cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 15, 5)
@@ -128,7 +135,7 @@ def detectar_placas(frame):
                 for r_placa in resultado_modelo_placa:
                     for placa in r_placa.boxes.data.tolist():
                         x1p, y1p, x2p, y2p, score, _ = placa
-                        if score < 0.5:
+                        if score < SCORE_THRESHOLD:
                             continue
 
                         x1p, y1p, x2p, y2p = map(int, [x1p, y1p, x2p, y2p])
@@ -159,16 +166,22 @@ def detectar_placas(frame):
 # Loop da câmera
 while True:
 
-    # Cria uma janela redimensionável
-    cv2.namedWindow("Reconhecimento de Placas", cv2.WINDOW_NORMAL)
-    # Define o tamanho desejado da janela (por exemplo, 1280x720)
-    cv2.resizeWindow("Reconhecimento de Placas", 800, 600)
+    start_time = time.time()
 
     ret, frame = cap.read()
     if not ret:
         break
 
     frame = detectar_placas(frame)
+
+    end_time = time.time()
+    elapsed = end_time - start_time
+    fps = 1 / elapsed if elapsed > 0 else 0
+
+    # Texto no frame
+    cv2.putText(frame, f"FPS: {fps:.2f}", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+    cv2.putText(frame, f"Tempo: {datetime.now().strftime('%H:%M:%S')}", (10, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+    cv2.putText(frame, f'Placas Cache: {len(placas_detectadas_recentemente)}', (10, 85), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
 
     # Exibe o frame
     cv2.imshow("Reconhecimento de Placas", frame)
