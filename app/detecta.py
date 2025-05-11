@@ -30,10 +30,10 @@ ocr_executor = ThreadPoolExecutor(max_workers=4)
 # Inicializações
 modelo_carro = YOLO('modelo_carro.pt').to('cuda')
 modelo_placa = YOLO('modelo_placa.pt').to('cuda')
-SCORE_THRESHOLD = 0.4
+SCORE_THRESHOLD = 0.1
 logging.getLogger("ultralytics").setLevel(logging.WARNING)
 reader = easyocr.Reader(['pt'], gpu=True, detect_network="craft", verbose=False)
-cap = cv2.VideoCapture(2)
+cap = cv2.VideoCapture(1)
 
 if not cap.isOpened():
     print("Erro ao acessar a câmera")
@@ -83,31 +83,19 @@ def salvar_imagem(etapa, imagem, nome_base, contador):
 
 def preprocessar_imagem_placa(roi_placa, nome_base, contador):
     # Converte para escala de cinza
-    gray = cv2.cvtColor(roi_placa, cv2.COLOR_BGR2GRAY)
-    salvar_imagem("gray", gray, nome_base, contador)
-
-    corrected = corrigir_perspectiva(gray)
-    salvar_imagem("corrected", gray, nome_base, contador)
-
-    # Aplica CLAHE (opcional, pode testar com ou sem)
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    gray = clahe.apply(corrected)
-    salvar_imagem("clahe", gray, nome_base, contador)
-
-    # Suaviza ruído leve
-    gray = cv2.GaussianBlur(gray, (3, 3), 0)
-    salvar_imagem("blur", gray, nome_base, contador)
+    imagem = cv2.cvtColor(roi_placa, cv2.COLOR_BGR2GRAY)
+    #salvar_imagem("gray", imagem, nome_base, contador)
 
     # Redimensiona para facilitar o OCR
-    upscale = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
-    salvar_imagem("resize", upscale, nome_base, contador)
+    imagem = cv2.resize(imagem, None, fx=7, fy=7, interpolation=cv2.INTER_LINEAR)
+    #salvar_imagem("resize", imagem, nome_base, contador)
 
     # Opcional: threshold suave com Otsu
-    _, thresh = cv2.threshold(upscale, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    salvar_imagem("thresh", thresh, nome_base, contador)
+    _, imagem = cv2.threshold(imagem, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    #salvar_imagem("thresh", imagem, nome_base, contador)
 
     # Retorna a imagem binarizada ou cinza redimensionada e cortada
-    return thresh
+    return imagem
     
 
 def ocr_placa(imagem_placa, nome_base, contador):
@@ -157,8 +145,8 @@ def processar_placa(placa, frame, x1, y1, x2, y2):
     status = "LIBERADO" if liberado else "BLOQUEADO"
 
     cor = (0, 255, 0) if liberado else (0, 0, 255)
-    cv2.rectangle(frame, (x1, y1), (x2, y2), cor, 2)
-    cv2.putText(frame, f"{placa} - {status}", (x1, y1 - 10),
+    cv2.rectangle(frame, (x1 - 10, y1 - 10), (x2 - 10, y2 -10), cor, 2)
+    cv2.putText(frame, f"{placa} - {status}", (x1, y1 - 20),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, cor, 2)
 
     print(f"{agora} - Placa: {placa} - {status}")
@@ -177,7 +165,7 @@ def detectar_placas(frame):
 
                 roi_carro = frame[y1:y2, x1:x2]
                 nome = ''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=15))
-                salvar_imagem("original carro", frame, nome, contador)
+                #salvar_imagem("original carro", frame, nome, contador)
                 resultado_modelo_placa = modelo_placa(roi_carro)
 
                 for r_placa in resultado_modelo_placa:
@@ -193,7 +181,7 @@ def detectar_placas(frame):
                         y2_abs = max(0, min(y1 + y2p, frame.shape[0]))
 
                         roi_placa = frame[y1_abs:y2_abs, x1_abs:x2_abs]
-                        salvar_imagem("original placa", frame, nome, contador)
+                        #salvar_imagem("original placa", frame, nome, contador)
 
                         if roi_placa.size == 0:
                             continue
