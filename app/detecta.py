@@ -11,6 +11,9 @@ import logging
 import torch
 import numpy as np
 import random
+import time
+
+
 print(torch.__version__)
 print(torch.cuda.is_available())  
 print(torch.version.cuda)        
@@ -24,16 +27,16 @@ placas_detectadas_recentemente = {}  # cache com TTL
 TTL_SEGUNDOS = 120
 
 ocr_executor = ThreadPoolExecutor(max_workers=4)  
-
+score_minimo = 0.0
 
 
 # Inicializações
 modelo_carro = YOLO('modelo_carro.pt').to('cuda')
 modelo_placa = YOLO('modelo_placa.pt').to('cuda')
-SCORE_THRESHOLD = 0.1
+
 logging.getLogger("ultralytics").setLevel(logging.WARNING)
 reader = easyocr.Reader(['pt'], gpu=True, detect_network="craft", verbose=False)
-cap = cv2.VideoCapture(1)
+cap = cv2.VideoCapture(2)
 
 if not cap.isOpened():
     print("Erro ao acessar a câmera")
@@ -79,22 +82,43 @@ def salvar_imagem(etapa, imagem, nome_base, contador):
     caminho = os.path.join(PASTA_SAIDA, f"{nome_base}_{etapa}_{contador}.jpg")
     cv2.imwrite(caminho, imagem)
 
+def imagem_escura(imagem, limiar=50):
+    """Verifica se a imagem tem baixa luminosidade."""
+    cinza = cv2.cvtColor(imagem, cv2.COLOR_BGR2GRAY)
+    brilho_medio = np.mean(cinza)
+    print("------------------------------  Brilho medio : " + str(brilho_medio))
+    return brilho_medio < limiar
 
+def imagem_clara(imagem, limiar=80):
+    """Verifica se a imagem tem baixa luminosidade."""
+    cinza = cv2.cvtColor(imagem, cv2.COLOR_BGR2GRAY)
+    brilho_medio = np.mean(cinza)
+    print("------------------------------  Brilho medio : " + str(brilho_medio))
+    return brilho_medio > limiar
+
+def melhorar_visao_noturna(imagem):
+    """Aplica equalização adaptativa para melhorar contraste em imagens escuras."""
+    alpha = 1.8  
+    beta = 40
+    melhorada = cv2.convertScaleAbs(imagem, alpha=alpha, beta=beta)
+    return melhorada
+
+def melhorar_visao_clara(imagem):
+    """Aplica equalização adaptativa para melhorar contraste em imagens claras."""
+    alpha = -0.6  
+    melhorada = cv2.convertScaleAbs(imagem, alpha=alpha, beta=0)
+    return melhorada
 
 def preprocessar_imagem_placa(roi_placa, nome_base, contador):
-    # Converte para escala de cinza
+
     imagem = cv2.cvtColor(roi_placa, cv2.COLOR_BGR2GRAY)
-    #salvar_imagem("gray", imagem, nome_base, contador)
 
-    # Redimensiona para facilitar o OCR
+    # Redimensiona para melhorar OCR
     imagem = cv2.resize(imagem, None, fx=7, fy=7, interpolation=cv2.INTER_LINEAR)
-    #salvar_imagem("resize", imagem, nome_base, contador)
 
-    # Opcional: threshold suave com Otsu
+    # Binarização
     _, imagem = cv2.threshold(imagem, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    #salvar_imagem("thresh", imagem, nome_base, contador)
 
-    # Retorna a imagem binarizada ou cinza redimensionada e cortada
     return imagem
     
 
@@ -145,8 +169,8 @@ def processar_placa(placa, frame, x1, y1, x2, y2):
     status = "LIBERADO" if liberado else "BLOQUEADO"
 
     cor = (0, 255, 0) if liberado else (0, 0, 255)
-    cv2.rectangle(frame, (x1 - 10, y1 - 10), (x2 - 10, y2 -10), cor, 2)
-    cv2.putText(frame, f"{placa} - {status}", (x1, y1 - 20),
+    cv2.rectangle(frame, (x1 - 25, y1 - 25), (x2 - 25, y2 -25), cor, 2)
+    cv2.putText(frame, f"{placa} - {status}", (x1, y1 - 30),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, cor, 2)
 
     print(f"{agora} - Placa: {placa} - {status}")
@@ -165,13 +189,26 @@ def detectar_placas(frame):
 
                 roi_carro = frame[y1:y2, x1:x2]
                 nome = ''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=15))
-                #salvar_imagem("original carro", frame, nome, contador)
+                salvar_imagem("original carro", frame, nome, contador)
+
+                # Detecta se a imagem está escura e aplica melhoria noturna se necessário
+                esta_escuro = imagem_escura(roi_carro)
+                score_minimo = 0.3 if esta_escuro else 0.5
+                if(esta_escuro) :
+                    print("Imagem escura detectada. Aplicando melhoria noturna...")
+                    roi_carro = melhorar_visao_noturna(roi_carro)
+                    salvar_imagem("melhorada carro", roi_carro, nome, contador)
+                elif(imagem_clara(roi_carro)):
+                    print("Imagem clara detectada. Aplicando melhoria de claridade...")
+                    roi_carro = melhorar_visao_clara(roi_carro)
+                    salvar_imagem("melhorada carro", roi_carro, nome, contador)
+
                 resultado_modelo_placa = modelo_placa(roi_carro)
 
                 for r_placa in resultado_modelo_placa:
                     for placa in r_placa.boxes.data.tolist():
                         x1p, y1p, x2p, y2p, score, _ = placa
-                        if score < 0.5:
+                        if score < score_minimo:
                             continue
 
                         x1p, y1p, x2p, y2p = map(int, [x1p, y1p, x2p, y2p])
@@ -181,7 +218,7 @@ def detectar_placas(frame):
                         y2_abs = max(0, min(y1 + y2p, frame.shape[0]))
 
                         roi_placa = frame[y1_abs:y2_abs, x1_abs:x2_abs]
-                        #salvar_imagem("original placa", frame, nome, contador)
+                        salvar_imagem("original placa", roi_placa, nome, contador)
 
                         if roi_placa.size == 0:
                             continue
@@ -209,16 +246,23 @@ cv2.namedWindow("Reconhecimento de Placas", cv2.WINDOW_NORMAL)
 # Define o tamanho desejado da janela (por exemplo, 1280x720)
 cv2.resizeWindow("Reconhecimento de Placas", 800, 600)
 
-# Loop da câmera
-while True:
+ultimo_tempo = time.time()
 
+while True:
     ret, frame = cap.read()
     if not ret:
         break
 
     frame = detectar_placas(frame)
 
-    # Exibe o frame
+    # Calcular e mostrar FPS
+    tempo_atual = time.time()
+    fps = 1 / (tempo_atual - ultimo_tempo)
+    ultimo_tempo = tempo_atual
+    cv2.putText(frame, f"FPS: {fps:.2f}", (20, 40),
+                cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
+
+    # Exibir imagem
     cv2.imshow("Reconhecimento de Placas", frame)
 
     if cv2.waitKey(60) & 0xFF == ord('q'):
