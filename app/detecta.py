@@ -25,8 +25,9 @@ PASTA_SAIDA = "saida"
 # Configuração
 placas_detectadas_recentemente = {}  # cache com TTL
 TTL_SEGUNDOS = 120
-
-ocr_executor = ThreadPoolExecutor(max_workers=4)  
+PROCESSAR_CADA_N_FRAMES = 2
+contador_frame = 0
+ocr_executor = ThreadPoolExecutor(max_workers=6)  
 score_minimo = 0.0
 
 
@@ -105,8 +106,9 @@ def melhorar_visao_noturna(imagem):
 
 def melhorar_visao_clara(imagem):
     """Aplica equalização adaptativa para melhorar contraste em imagens claras."""
-    alpha = -0.6  
-    melhorada = cv2.convertScaleAbs(imagem, alpha=alpha, beta=0)
+    alpha = 0.7  
+    beta = -30
+    melhorada = cv2.convertScaleAbs(imagem, alpha=alpha, beta=beta)
     return melhorada
 
 def preprocessar_imagem_placa(roi_placa, nome_base, contador):
@@ -177,7 +179,7 @@ def processar_placa(placa, frame, x1, y1, x2, y2):
 
 def detectar_placas(frame):
     limpar_cache_placas()
-    results = modelo_carro(frame)
+    results = modelo_carro(frame, conf=0.7)
     ocr_futures = []
     contador = 0
     for r in results:
@@ -222,8 +224,6 @@ def detectar_placas(frame):
 
                         if roi_placa.size == 0:
                             continue
-
-                        # Gera uma string de 7 caracteres aleatórios (com repetição)
                         
                         # OCR paralela: submit para execução
                         future = ocr_executor.submit(ocr_placa, roi_placa,nome,contador)
@@ -253,7 +253,11 @@ while True:
     if not ret:
         break
 
-    frame = detectar_placas(frame)
+    contador_frame += 1
+    if contador_frame % PROCESSAR_CADA_N_FRAMES == 0:
+        frame_processado = detectar_placas(frame)
+    else:
+        frame_processado = frame
 
     # Calcular e mostrar FPS
     tempo_atual = time.time()
