@@ -25,10 +25,9 @@ PASTA_SAIDA = "saida"
 # Configuração
 placas_detectadas_recentemente = {}  # cache com TTL
 TTL_SEGUNDOS = 120
-PROCESSAR_CADA_N_FRAMES = 2
+PROCESSAR_CADA_N_FRAMES = 1
 contador_frame = 0
 ocr_executor = ThreadPoolExecutor(max_workers=6)  
-score_minimo = 0.0
 
 
 # Inicializações
@@ -37,7 +36,7 @@ modelo_placa = YOLO('modelo_placa.pt').to('cuda')
 
 logging.getLogger("ultralytics").setLevel(logging.WARNING)
 reader = easyocr.Reader(['pt'], gpu=True, detect_network="craft", verbose=False)
-cap = cv2.VideoCapture(2)
+cap = cv2.VideoCapture(3)
 
 if not cap.isOpened():
     print("Erro ao acessar a câmera")
@@ -83,19 +82,11 @@ def salvar_imagem(etapa, imagem, nome_base, contador):
     caminho = os.path.join(PASTA_SAIDA, f"{nome_base}_{etapa}_{contador}.jpg")
     cv2.imwrite(caminho, imagem)
 
-def imagem_escura(imagem, limiar=50):
-    """Verifica se a imagem tem baixa luminosidade."""
+def verificar_brilho(imagem,nome_base):
     cinza = cv2.cvtColor(imagem, cv2.COLOR_BGR2GRAY)
     brilho_medio = np.mean(cinza)
-    print("------------------------------  Brilho medio : " + str(brilho_medio))
-    return brilho_medio < limiar
-
-def imagem_clara(imagem, limiar=80):
-    """Verifica se a imagem tem baixa luminosidade."""
-    cinza = cv2.cvtColor(imagem, cv2.COLOR_BGR2GRAY)
-    brilho_medio = np.mean(cinza)
-    print("------------------------------  Brilho medio : " + str(brilho_medio))
-    return brilho_medio > limiar
+    print("Imagem: " + nome_base + " ------------------------------  Brilho medio : " + str(brilho_medio))
+    return brilho_medio
 
 def melhorar_visao_noturna(imagem):
     """Aplica equalização adaptativa para melhorar contraste em imagens escuras."""
@@ -111,15 +102,42 @@ def melhorar_visao_clara(imagem):
     melhorada = cv2.convertScaleAbs(imagem, alpha=alpha, beta=beta)
     return melhorada
 
+
 def preprocessar_imagem_placa(roi_placa, nome_base, contador):
+    imagem = roi_placa
 
-    imagem = cv2.cvtColor(roi_placa, cv2.COLOR_BGR2GRAY)
+    # Se a imagem for pequena, aumente antes de outras etapas
+    h, w = imagem.shape[:2]
 
-    # Redimensiona para melhorar OCR
-    imagem = cv2.resize(imagem, None, fx=7, fy=7, interpolation=cv2.INTER_LINEAR)
+    print(nome_base)
+    print(h,w)
+
+    if h < 30 or w < 100:
+        print("Imagem pequena. Aplicando upscale inicial...")
+        escala_x = 1.5
+        escala_y = 2.0
+        nova_largura = int(w * escala_x)
+        nova_altura = int(h * escala_y)
+        imagem = cv2.resize(imagem, (nova_largura, nova_altura), interpolation=cv2.INTER_CUBIC)
+        salvar_imagem("upscaled", imagem, nome_base, contador)
+    h, w = imagem.shape[:2]
+
+    print(nome_base)
+    print(h,w)
+    
+    imagem = cv2.cvtColor(imagem, cv2.COLOR_BGR2GRAY)
+    salvar_imagem("gray", imagem, nome_base, contador)
+
+
+    # Upscale adicional se ainda for pequeno
+    if imagem.shape[0] < 100 or imagem.shape[1] < 200:
+        imagem = cv2.resize(imagem, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+        salvar_imagem("resize", imagem, nome_base, contador)
+
 
     # Binarização
     _, imagem = cv2.threshold(imagem, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    salvar_imagem("threshold", imagem, nome_base, contador)
 
     return imagem
     
@@ -186,21 +204,19 @@ def detectar_placas(frame):
         for box, cls in zip(r.boxes.xyxy, r.boxes.cls):
             if int(cls) in [2, 3, 5, 7]:  # classes de veículos
                 x1, y1, x2, y2 = map(int, box)
-                if x1 >= x2 or y1 >= y2:
-                    continue
 
                 roi_carro = frame[y1:y2, x1:x2]
                 nome = ''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=15))
                 salvar_imagem("original carro", frame, nome, contador)
 
+                score_minimo = 0.3
                 # Detecta se a imagem está escura e aplica melhoria noturna se necessário
-                esta_escuro = imagem_escura(roi_carro)
-                score_minimo = 0.3 if esta_escuro else 0.5
-                if(esta_escuro) :
+                brilho = verificar_brilho(roi_carro,nome)
+                if(brilho < 50) :
                     print("Imagem escura detectada. Aplicando melhoria noturna...")
                     roi_carro = melhorar_visao_noturna(roi_carro)
                     salvar_imagem("melhorada carro", roi_carro, nome, contador)
-                elif(imagem_clara(roi_carro)):
+                elif(brilho > 80):
                     print("Imagem clara detectada. Aplicando melhoria de claridade...")
                     roi_carro = melhorar_visao_clara(roi_carro)
                     salvar_imagem("melhorada carro", roi_carro, nome, contador)
