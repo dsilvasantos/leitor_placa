@@ -14,7 +14,6 @@ from deep_sort_realtime.deepsort_tracker import DeepSort
 
 
 API_BASE = "http://localhost:8000/api/"  # URL do serviço REST
-PASTA_SAIDA = "saida"
 placas_detectadas_recentemente = {}  # cache com TTL
 TTL_SEGUNDOS = 120
 PROCESSAR_CADA_N_FRAMES = 1
@@ -78,7 +77,6 @@ def salvar_imagem(etapa, imagem, nome_base, contador):
 def verificar_brilho(imagem,nome_base):
     cinza = cv2.cvtColor(imagem, cv2.COLOR_BGR2GRAY)
     brilho_medio = np.mean(cinza)
-    print("Imagem: " + nome_base + " ------------------------------  Brilho medio : " + str(brilho_medio))
     return brilho_medio
 
 def melhorar_visao_noturna(imagem):
@@ -93,51 +91,38 @@ def melhorar_visao_clara(imagem):
     melhorada = cv2.convertScaleAbs(imagem, alpha=alpha, beta=beta)
     return melhorada
 
-def remover_bordas(imagem, margem=0.05):
-    h, w = imagem.shape[:2]
-    x1 = int(w * margem)
-    y1 = int(h * margem)
-    x2 = int(w * (1 - margem))
-    y2 = int(h * (1 - margem))
-    return imagem[y1:y2, x1:x2]
+def aplicar_clahe(imagem_gray):
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    return clahe.apply(imagem_gray)
+
 
 def preprocessar_imagem_placa(roi_placa, nome_base, contador):
     imagem = roi_placa
     h, w = imagem.shape[:2]
 
-    print(nome_base)
-    print(h,w)
-
     if h < 30 or w < 100:
-        print("Imagem pequena. Aplicando upscale inicial...")
         escala_x = 1.5
         escala_y = 2.0
         nova_largura = int(w * escala_x)
         nova_altura = int(h * escala_y)
         imagem = cv2.resize(imagem, (nova_largura, nova_altura), interpolation=cv2.INTER_CUBIC)
-        salvar_imagem("upscaled", imagem, nome_base, contador)
-    h, w = imagem.shape[:2]
 
-    print(nome_base)
-    print(h,w)
-    
+
     imagem = cv2.cvtColor(imagem, cv2.COLOR_BGR2GRAY)
-    salvar_imagem("gray", imagem, nome_base, contador)
 
+    imagem = aplicar_clahe(imagem)
+    
     if imagem.shape[0] < 100 or imagem.shape[1] < 200:
         imagem = cv2.resize(imagem, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
-        salvar_imagem("resize", imagem, nome_base, contador)
 
-    imagem = remover_bordas(imagem)
-    salvar_imagem("bordas", imagem, nome_base, contador)
+    imagem = corrigir_perspectiva(imagem)
 
     _, imagem = cv2.threshold(imagem, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    salvar_imagem("threshold", imagem, nome_base, contador)
 
     return imagem
 
 
-def substituir_caracteres_similares(texto):
+def substituir_caracteres_similaresInicial(texto):
         substituicoes = {
             '0': 'O', '1': 'I', '5': 'S', '8': 'B'
         }
@@ -146,6 +131,21 @@ def substituir_caracteres_similares(texto):
             if texto_corrigido[i] in substituicoes:
                 texto_corrigido[i] = substituicoes[texto_corrigido[i]]
         return ''.join(texto_corrigido)
+
+def substituir_caracteres_similaresFinal(texto):
+    substituicoes = {
+        'O': '0', 'I': '1', 'S': '5', 'B': '8'
+    }
+
+    indices = [3, 5, 6] 
+
+    texto_corrigido = list(texto)
+
+    for i in indices:
+        if i < len(texto_corrigido) and texto_corrigido[i] in substituicoes:
+            texto_corrigido[i] = substituicoes[texto_corrigido[i]]
+
+    return ''.join(texto_corrigido)
 
 def ocr_placa(imagem_placa, nome_base, contador):
     placas_encontradas = []
@@ -176,14 +176,23 @@ def ocr_placa(imagem_placa, nome_base, contador):
     matches = re.findall(r'[A-Z]{3}[0-9]{4}|[A-Z]{3}[0-9][A-Z][0-9]{2}', placa)
     if not matches :
         if  len(placa) == 7:
-            placa = substituir_caracteres_similares(placa)
+            placa = substituir_caracteres_similaresInicial(placa)
             matches = re.findall(r'[A-Z]{3}[0-9]{4}|[A-Z]{3}[0-9][A-Z][0-9]{2}', placa)
+            if not matches:
+                placa = substituir_caracteres_similaresInicial(placa)
+                matches = re.findall(r'[A-Z]{3}[0-9]{4}|[A-Z]{3}[0-9][A-Z][0-9]{2}', placa)
 
     placas_encontradas.extend(matches)
 
+    """""
+    with open(ARQUIVO_PLACAS, 'a') as f:
+        for p in placas_encontradas:
+            f.write(f"{nome_base}_{contador}: {p}\n")
+
+    """
     return placas_encontradas
 
-
+#def processar_placa(placa, frame, x1, y1, x2, y2):
 def processar_placa(placa, frame, x1, y1, x2, y2, track_id):
     status = "BLOQUEADO"
 
@@ -209,9 +218,13 @@ def processar_placa(placa, frame, x1, y1, x2, y2, track_id):
 
     print(f"{agora} - Placa: {placa} - {status}")
 
+#def detectar_placas_em_imagem(caminho_imagem):
 def detectar_placas(frame):
     limpar_cache_placas()
-    results = modelo_carro(frame, conf=0.7)
+    
+    #frame = cv2.imread(caminho_imagem)
+    
+    results = modelo_carro(frame, conf=0.3)
     ocr_futures = []
     contador = 0
 
@@ -223,6 +236,7 @@ def detectar_placas(frame):
                 x1, y1, x2, y2 = map(int, box)
                 carros_detectados.append(([x1, y1, x2 - x1, y2 - y1], conf.item(), "carro"))
 
+    
     # Atualiza o rastreamento fora do loop de detecção
     tracks = tracker.update_tracks(carros_detectados, frame=frame)
 
@@ -241,12 +255,12 @@ def detectar_placas(frame):
             cv2.putText(frame, f"{placa} - LIBERADO", (x1, y1 - 30),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
             continue
-
+        
         roi_carro = frame[y1:y2, x1:x2]
         if roi_carro.size == 0:
             print(f"ROI inválido para track_id {track_id}. Pulando...")
             continue
-        
+        #nome = os.path.splitext(os.path.basename(caminho_imagem))[0]
         nome = ''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=15))
         salvar_imagem("original carro", frame, nome, contador)
 
@@ -254,11 +268,9 @@ def detectar_placas(frame):
         brilho = verificar_brilho(roi_carro, nome)
 
         if brilho < 50:
-            print("Imagem escura detectada. Aplicando melhoria noturna...")
             roi_carro = melhorar_visao_noturna(roi_carro)
             salvar_imagem("melhorada carro", roi_carro, nome, contador)
         elif brilho > 80:
-            print("Imagem clara detectada. Aplicando melhoria de claridade...")
             roi_carro = melhorar_visao_clara(roi_carro)
             salvar_imagem("melhorada carro", roi_carro, nome, contador)
 
@@ -282,6 +294,7 @@ def detectar_placas(frame):
 
                 future = ocr_executor.submit(ocr_placa, roi_placa, nome, contador)
                 future.meta = (frame, x1_abs, y1_abs, x2_abs, y2_abs, track_id)
+                #future.meta = (frame, x1_abs, y1_abs, x2_abs, y2_abs)
                 ocr_futures.append(future)
 
         contador += 1
@@ -289,9 +302,12 @@ def detectar_placas(frame):
     for future in as_completed(ocr_futures):
         placas = future.result()
         frame, x1_abs, y1_abs, x2_abs, y2_abs, track_id = future.meta
-
+        #frame, x1_abs, y1_abs, x2_abs, y2_abs = future.meta
         for placa in placas:
             processar_placa(placa, frame, x1, y1, x2, y2, track_id)
+            #processar_placa(placa, frame, x1, y1, x2, y2)
+
+PASTA_SAIDA = "saida"      # onde salvar etapas
 
 def main():
     global contador_frame
@@ -316,5 +332,22 @@ def main():
     cap.release()
     cv2.destroyAllWindows()
 
+"""""
+PASTA_IMAGENS = "imagens"  # pasta com imagens
+ARQUIVO_PLACAS = "placas_detectadas.txt"
+os.makedirs(PASTA_SAIDA, exist_ok=True)
+open(ARQUIVO_PLACAS, 'w').close()
+
+def main():
+    # PROCESSA TODAS AS IMAGENS NA PASTA
+    for arquivo in os.listdir(PASTA_IMAGENS):
+        if arquivo.lower().endswith((".jpg", ".jpeg", ".png")):
+            caminho = os.path.join(PASTA_IMAGENS, arquivo)
+            print(f"\n\n\nProcessando {caminho}...")
+            detectar_placas_em_imagem(caminho)
+            time.sleep(2)
+
+print("Processamento concluído.")
+"""
 if __name__ == "__main__":
     main()

@@ -4,3 +4,4 @@ requests
 easyocr
 pytesseract
 opencv-python
+deep_sort_realtime
