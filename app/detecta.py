@@ -11,6 +11,7 @@ import numpy as np
 import random
 import time
 from deep_sort_realtime.deepsort_tracker import DeepSort
+from collections import defaultdict, Counter
 
 
 API_BASE = "http://localhost:8000/api/"  # URL do serviço REST
@@ -27,10 +28,11 @@ modelo_placa = YOLO('modelo_placa.pt').to('cuda')
 tracker = DeepSort(max_age=10)  # tempo de vida de um ID após sumir do frame
 veiculos_liberados = set()  # IDs de veículos já liberados
 placas_por_veiculo = {}  # track_id: placa
+placas_por_veiculo_bloqueado = defaultdict(list)
 
 logging.getLogger("ultralytics").setLevel(logging.WARNING)
 reader = easyocr.Reader(['pt'], gpu=True, detect_network="craft", verbose=False)
-cap = cv2.VideoCapture(2)
+cap = cv2.VideoCapture(3)
 
 if not cap.isOpened():
     print("Erro ao acessar a câmera")
@@ -98,6 +100,11 @@ def aplicar_clahe(imagem_gray):
 
 def preprocessar_imagem_placa(roi_placa, nome_base, contador):
     imagem = roi_placa
+
+    if imagem is None or imagem.size == 0:
+        print(f"[ERRO] Imagem vazia recebida no pré-processamento ({nome_base}_{contador})")
+        return None
+
     h, w = imagem.shape[:2]
 
     if h < 30 or w < 100:
@@ -150,13 +157,18 @@ def substituir_caracteres_similaresFinal(texto):
 def ocr_placa(imagem_placa, nome_base, contador):
     placas_encontradas = []
 
+    if imagem_placa is None:
+        print(f"[AVISO] Imagem de placa vazia em {nome_base}_{contador}, pulando OCR.")
+        return placas_encontradas
     imagem_pre = preprocessar_imagem_placa(imagem_placa, nome_base, contador)
+    if imagem_pre is None:
+        return placas_encontradas
+    
     resultados = reader.readtext(imagem_pre, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
 
     placa = ''
     placa_moto = ["",""]
     for _, texto, _ in resultados:
-        print("Texto : " + texto)
         texto = texto.upper().replace(" ", "").strip()
         if 7 == len(texto):
             placa = texto
@@ -171,15 +183,13 @@ def ocr_placa(imagem_placa, nome_base, contador):
     if len(placa_moto[0]) == 3 and len(placa_moto[1]) == 4:
         placa = placa_moto[0] + placa_moto[1]
 
-    print("Texto OCR unido:", placa)
-
     matches = re.findall(r'[A-Z]{3}[0-9]{4}|[A-Z]{3}[0-9][A-Z][0-9]{2}', placa)
     if not matches :
         if  len(placa) == 7:
             placa = substituir_caracteres_similaresInicial(placa)
             matches = re.findall(r'[A-Z]{3}[0-9]{4}|[A-Z]{3}[0-9][A-Z][0-9]{2}', placa)
             if not matches:
-                placa = substituir_caracteres_similaresInicial(placa)
+                placa = substituir_caracteres_similaresFinal(placa)
                 matches = re.findall(r'[A-Z]{3}[0-9]{4}|[A-Z]{3}[0-9][A-Z][0-9]{2}', placa)
 
     placas_encontradas.extend(matches)
@@ -197,7 +207,6 @@ def processar_placa(placa, frame, x1, y1, x2, y2, track_id):
     status = "BLOQUEADO"
 
     if placa in placas_detectadas_recentemente:
-        print(f"Placa {placa} já processada recentemente")
         liberado, agora = placas_detectadas_recentemente[placa]
     else:
         agora = datetime.now()
@@ -208,6 +217,11 @@ def processar_placa(placa, frame, x1, y1, x2, y2, track_id):
     if liberado:
         veiculos_liberados.add(track_id)
         placas_por_veiculo[track_id] = placa
+    else:
+        if track_id in placas_por_veiculo_bloqueado:
+            placas_por_veiculo_bloqueado[track_id].append(placa)
+        else:
+            placas_por_veiculo_bloqueado[track_id] = [placa]
 
     status = "LIBERADO" if liberado else "BLOQUEADO"
 
@@ -255,6 +269,14 @@ def detectar_placas(frame):
             cv2.putText(frame, f"{placa} - LIBERADO", (x1, y1 - 30),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
             continue
+        elif track_id in placas_por_veiculo_bloqueado and len(placas_por_veiculo_bloqueado[track_id]) > 5:
+            contagem = Counter(placas_por_veiculo_bloqueado[track_id])
+            placa_final = contagem.most_common(1)[0][0]
+            cv2.rectangle(frame, (x1 - 25, y1 - 25), (x2 - 25, y2 - 25), (0, 0, 255), 2)
+            cv2.putText(frame, f"{placa_final} - BLOQUEADO", (x1, y1 - 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+            continue
+
         
         roi_carro = frame[y1:y2, x1:x2]
         if roi_carro.size == 0:
@@ -311,22 +333,28 @@ PASTA_SAIDA = "saida"      # onde salvar etapas
 
 def main():
     global contador_frame
+
+    cv2.namedWindow("Leitura de Placas", cv2.WINDOW_NORMAL)
+    cv2.resizeWindow("Leitura de Placas", 1280, 720)
+
+
+
     while True:
         ret, frame = cap.read()
         if not ret:
             break
 
-        contador_frame += 1
-        if contador_frame % PROCESSAR_CADA_N_FRAMES != 0:
-            cv2.imshow('frame', frame)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-            continue
 
         detectar_placas(frame)
-        cv2.imshow('frame', frame)
+        cv2.imshow('Leitura de Placas', frame)
 
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('f'):
+            cv2.setWindowProperty("Leitura de Placas", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        elif key == ord('m'):
+            cv2.setWindowProperty("Leitura de Placas", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL)
+            cv2.resizeWindow("Leitura de Placas", 1280, 720)
+        elif key == ord('q'):
             break
 
     cap.release()
