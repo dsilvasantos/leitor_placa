@@ -93,6 +93,14 @@ def melhorar_visao_clara(imagem):
     melhorada = cv2.convertScaleAbs(imagem, alpha=alpha, beta=beta)
     return melhorada
 
+def remover_bordas(imagem, margem=0.05):
+    h, w = imagem.shape[:2]
+    x1 = int(w * margem)
+    y1 = int(h * margem)
+    x2 = int(w * (1 - margem))
+    y2 = int(h * (1 - margem))
+    return imagem[y1:y2, x1:x2]
+
 def preprocessar_imagem_placa(roi_placa, nome_base, contador):
     imagem = roi_placa
     h, w = imagem.shape[:2]
@@ -120,10 +128,24 @@ def preprocessar_imagem_placa(roi_placa, nome_base, contador):
         imagem = cv2.resize(imagem, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
         salvar_imagem("resize", imagem, nome_base, contador)
 
+    imagem = remover_bordas(imagem)
+    salvar_imagem("bordas", imagem, nome_base, contador)
+
     _, imagem = cv2.threshold(imagem, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     salvar_imagem("threshold", imagem, nome_base, contador)
 
     return imagem
+
+
+def substituir_caracteres_similares(texto):
+        substituicoes = {
+            '0': 'O', '1': 'I', '5': 'S', '8': 'B'
+        }
+        texto_corrigido = list(texto)
+        for i in range(3):  # somente nas letras
+            if texto_corrigido[i] in substituicoes:
+                texto_corrigido[i] = substituicoes[texto_corrigido[i]]
+        return ''.join(texto_corrigido)
 
 def ocr_placa(imagem_placa, nome_base, contador):
     placas_encontradas = []
@@ -152,9 +174,15 @@ def ocr_placa(imagem_placa, nome_base, contador):
     print("Texto OCR unido:", placa)
 
     matches = re.findall(r'[A-Z]{3}[0-9]{4}|[A-Z]{3}[0-9][A-Z][0-9]{2}', placa)
+    if not matches :
+        if  len(placa) == 7:
+            placa = substituir_caracteres_similares(placa)
+            matches = re.findall(r'[A-Z]{3}[0-9]{4}|[A-Z]{3}[0-9][A-Z][0-9]{2}', placa)
+
     placas_encontradas.extend(matches)
 
     return placas_encontradas
+
 
 def processar_placa(placa, frame, x1, y1, x2, y2, track_id):
     status = "BLOQUEADO"
