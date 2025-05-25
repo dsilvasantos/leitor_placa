@@ -40,6 +40,7 @@ placas_detectadas_recentemente = {}  # Cache de placas: {placa: (liberado, times
 veiculos_liberados_rastreados = set()  # IDs de tracks de veículos já liberados
 placas_associadas_veiculo = {}  # track_id: placa_confirmada
 contagem_placas_bloqueadas_por_veiculo = defaultdict(list) # track_id: [placa_ocr1, placa_ocr2,...]
+veiculos_bloqueados_registrados = set()  #Veiculos bloqueados que já tiveram 5 capturas e já foram registrados na api como bloqueados
 
 def limpar_cache_expirado_placas():
     """Remove placas do cache que excederam o TTL."""
@@ -69,6 +70,20 @@ def limpar_variaveis_rastreamento(tracks):
         del contagem_placas_bloqueadas_por_veiculo[tid]
 
 
+def registrar_viculo(bbox_veiculo_abs,frame_para_desenho,placa,status):
+    x1_car, y1_car, x2_car, y2_car = bbox_veiculo_abs 
+    roi_veiculo_para_api = None # Inicializada como None
+    if frame_para_desenho is not None and x1_car < x2_car and y1_car < y2_car:
+        y1_val = max(0, y1_car)
+        y2_val = min(frame_para_desenho.shape[0], y2_car)
+        x1_val = max(0, x1_car)
+        x2_val = min(frame_para_desenho.shape[1], x2_car)
+        if y1_val < y2_val and x1_val < x2_val:
+            # Esta linha DEVERIA produzir um array NumPy
+            roi_veiculo_para_api = frame_para_desenho[y1_val:y2_val, x1_val:x2_val].copy()
+            api_client.registrar_captura(placa, status,roi_veiculo_para_api,config.API_BASE_URL)
+
+
 
 def processar_placa_identificada(placa_ocr, frame_para_desenho, bbox_veiculo_abs, track_id_veiculo):
     """
@@ -87,12 +102,12 @@ def processar_placa_identificada(placa_ocr, frame_para_desenho, bbox_veiculo_abs
     else:
         timestamp_atual = datetime.now()
         status_final_liberado = api_client.verificar_placa_api(placa_ocr, config.API_BASE_URL)
-        api_client.registrar_captura_api(placa_ocr, status_final_liberado, config.API_BASE_URL)
         placas_detectadas_recentemente[placa_ocr] = (status_final_liberado, timestamp_atual)
 
     # Atualiza estado do veículo com base no status da placa
     if status_final_liberado:
         veiculos_liberados_rastreados.add(track_id_veiculo)
+        registrar_viculo(bbox_veiculo_abs,frame_para_desenho,placa_ocr,status_final_liberado)
         placas_associadas_veiculo[track_id_veiculo] = placa_ocr
         if track_id_veiculo in contagem_placas_bloqueadas_por_veiculo: # Limpa contagens anteriores se agora está liberado
             del contagem_placas_bloqueadas_por_veiculo[track_id_veiculo]
@@ -172,19 +187,13 @@ def detectar_e_rastrear(frame_original):
         if track_id in contagem_placas_bloqueadas_por_veiculo and len(contagem_placas_bloqueadas_por_veiculo[track_id]) > 5:
             contagem = Counter(contagem_placas_bloqueadas_por_veiculo[track_id])
             placa_mais_frequente_bloqueada, _ = contagem.most_common(1)[0]
-            
-            # Verifica se essa placa mais frequente está de fato bloqueada no cache (pode ter sido liberada depois)
-            if placa_mais_frequente_bloqueada in placas_detectadas_recentemente:
-                status_recente_liberado, _ = placas_detectadas_recentemente[placa_mais_frequente_bloqueada]
-                if status_recente_liberado: # Se foi liberada, limpa e tenta de novo
-                    del contagem_placas_bloqueadas_por_veiculo[track_id]
-                    # Não desenha nada, vai para a detecção de placa
-                else: # Ainda bloqueada
-                    cv2.rectangle(frame_original, (x1_t, y1_t), (x2_t, y2_t), (0, 0, 255), 2)
-                    cv2.putText(frame_original, f"{placa_mais_frequente_bloqueada} - BLOQUEADO (RASTREADO)", (x1_t, y1_t - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-                    continue # Pula a detecção de placa para este veículo neste frame
-            # Se não está no cache, pode ter expirado, então reprocessa
+            if track_id not in veiculos_bloqueados_registrados:
+                veiculos_bloqueados_registrados.add(track_id)
+                registrar_viculo(map_bbox_original_veiculo[track_id],frame_original,placa_mais_frequente_bloqueada,"BLOQUEADO")
+            cv2.rectangle(frame_original, (x1_t, y1_t), (x2_t, y2_t), (0, 0, 255), 2)
+            cv2.putText(frame_original, f"{placa_mais_frequente_bloqueada} - BLOQUEADO (RASTREADO)", (x1_t, y1_t - 10),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+            continue # Pula a detecção de placa para este veículo neste frame
         
 
         # Evita submeter OCR para o mesmo track_id múltiplas vezes no mesmo frame se houver múltiplas detecções
@@ -220,10 +229,8 @@ def detectar_e_rastrear(frame_original):
                 # Coordenadas da placa relativas ao ROI do veículo
                 x1p_rel, y1p_rel, x2p_rel, y2p_rel = map(int, box_placa.xyxy[0])
                 
-                # Extrai o ROI da placa do ROI do VEÍCULO ORIGINAL (sem ajustes de brilho globais)
-                # para evitar que o ajuste de brilho do carro inteiro afete negativamente o OCR da placa.
-                # O pré-processamento específico da placa cuidará disso.
-                roi_placa_efetivo = roi_veiculo[y1p_rel:y2p_rel, x1p_rel:x2p_rel]
+
+                roi_placa_efetivo = roi_veiculo_ajustado[y1p_rel:y2p_rel, x1p_rel:x2p_rel]
 
                 if roi_placa_efetivo.size == 0:
                     continue
