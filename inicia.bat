@@ -3,4 +3,4 @@ echo Ativando ambiente virtual...
 python -m venv venv
 call venv\Scripts\activate
 cd app
-python detecta.py
+python main.py
