@@ -107,7 +107,7 @@ def processar_placa_identificada(placa_ocr, frame_para_desenho, bbox_veiculo_abs
     # Atualiza estado do veículo com base no status da placa
     if status_final_liberado:
         veiculos_liberados_rastreados.add(track_id_veiculo)
-        registrar_viculo(bbox_veiculo_abs,frame_para_desenho,placa_ocr,status_final_liberado)
+        registrar_viculo(bbox_veiculo_abs,frame_para_desenho,placa_ocr,"LIBERADO")
         placas_associadas_veiculo[track_id_veiculo] = placa_ocr
         if track_id_veiculo in contagem_placas_bloqueadas_por_veiculo: # Limpa contagens anteriores se agora está liberado
             del contagem_placas_bloqueadas_por_veiculo[track_id_veiculo]

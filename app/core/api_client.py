@@ -44,8 +44,7 @@ def registrar_captura(
 
     endpoint_url = f"{api_url_base.rstrip('/')}/capturas"
     
-    status_str = "LIBERADO" if status_liberado else "BLOQUEADO"
-    
+
   
     files_to_send = None
     try:
@@ -62,7 +61,7 @@ def registrar_captura(
           # Dados do formulário (sem a imagem)
         payload_data = {
         "placa": placa,
-        "status": status_str
+        "status": status_liberado
         }
 
 
