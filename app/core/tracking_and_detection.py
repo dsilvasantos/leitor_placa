@@ -41,6 +41,7 @@ veiculos_liberados_rastreados = set()  # IDs de tracks de veículos já liberado
 placas_associadas_veiculo = {}  # track_id: placa_confirmada
 contagem_placas_bloqueadas_por_veiculo = defaultdict(list) # track_id: [placa_ocr1, placa_ocr2,...]
 veiculos_bloqueados_registrados = set()  #Veiculos bloqueados que já tiveram 5 capturas e já foram registrados na api como bloqueados
+contador_frame_limpeza = 0
 
 def limpar_cache_expirado_placas():
     """Remove placas do cache que excederam o TTL."""
@@ -56,13 +57,16 @@ def limpar_variaveis_rastreamento(tracks):
     
     current_active_track_ids = {t.track_id for t in tracks}
 
-    global veiculos_liberados_rastreados, placas_associadas_veiculo, contagem_placas_bloqueadas_por_veiculo
+    global veiculos_liberados_rastreados, placas_associadas_veiculo, contagem_placas_bloqueadas_por_veiculo,veiculos_bloqueados_registrados
 
     # Filtra veiculos_liberados_rastreados mantendo apenas os IDs ativos
     veiculos_liberados_rastreados = {tid for tid in veiculos_liberados_rastreados if tid in current_active_track_ids}
 
     # Filtra placas_associadas_veiculo mantendo apenas os IDs ativos
     placas_associadas_veiculo = {tid: placa for tid, placa in placas_associadas_veiculo.items() if tid in current_active_track_ids}
+
+    # Filtra veiculos bloquados mantendo apenas os IDs ativos
+    veiculos_bloqueados_registrados = {tid for tid in veiculos_bloqueados_registrados if tid in current_active_track_ids}
 
     # Filtra contagem_placas_bloqueadas_por_veiculo
     keys_to_remove_bloqueado = [tid for tid in contagem_placas_bloqueadas_por_veiculo if tid not in current_active_track_ids]
@@ -134,6 +138,10 @@ def detectar_e_rastrear(frame_original):
         cv2.putText(frame_original, "Modelos YOLO nao carregados", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
         return frame_original # Retorna o frame original se modelos não carregaram
 
+    global contador_frame_limpeza  # Declara que você vai usar a variável global
+    contador_frame_limpeza += 1   # Incrementa a variável global
+
+    
     limpar_cache_expirado_placas()
     
     frame_processamento = frame_original.copy()
@@ -158,7 +166,12 @@ def detectar_e_rastrear(frame_original):
     # 2. Atualização do rastreador DeepSort
     tracks = tracker.update_tracks(deteccoes_para_tracker, frame=frame_processamento)
 
-    limpar_variaveis_rastreamento(tracks)
+
+    if contador_frame_limpeza == 2000:
+        print("Limpeza de variaveis.")
+        limpar_variaveis_rastreamento(tracks)
+        contador_frame_limpeza=1
+
     
     ocr_tasks_ativas = [] # Lista para armazenar os futures do ThreadPoolExecutor
 
