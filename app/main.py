@@ -11,8 +11,7 @@ from core.tracking_and_detection import detectar_e_rastrear, ocr_executor # Impo
 # Configuração básica de logging para suprimir logs excessivos de bibliotecas
 logging.basicConfig(level=logging.INFO)
 logging.getLogger("ultralytics").setLevel(logging.WARNING)
-# Se o EasyOCR tiver um logger específico, pode ser configurado aqui também.
-# logging.getLogger("easyocr").setLevel(logging.WARNING)
+logging.getLogger("easyocr").setLevel(logging.WARNING)
 
 
 def main_loop_camera():
@@ -74,48 +73,45 @@ def main_loop_camera():
     print("Aplicação encerrada.")
 
 # Código comentado para processar imagens de uma pasta (manter como referência se necessário)
-'''
-PASTA_IMAGENS_TESTE = "imagens_teste" 
 
-def processar_imagens_pasta(pasta_imagens):
+
+def processar_imagens_pasta():
+
+    
     if not os.path.exists(config.PASTA_SAIDA_IMAGENS):
         os.makedirs(config.PASTA_SAIDA_IMAGENS, exist_ok=True)
 
-    if not os.path.exists(pasta_imagens):
-        print(f"Pasta de imagens de teste '{pasta_imagens}' não encontrada.")
+    if not os.path.exists(config.CAMERA_INDEX):
+        print(f"Pasta de imagens de teste '{config.CAMERA_INDEX}' não encontrada.")
         return
 
-    for nome_arquivo in os.listdir(pasta_imagens):
+    for nome_arquivo in os.listdir(config.CAMERA_INDEX):
         if nome_arquivo.lower().endswith((".jpg", ".jpeg", ".png")):
-            caminho_imagem = os.path.join(pasta_imagens, nome_arquivo)
-            print(f"\\nProcessando imagem: {caminho_imagem}...")
-            
-            frame = cv2.imread(caminho_imagem)
-            if frame is None:
-                print(f"Não foi possível ler a imagem: {caminho_imagem}")
-                continue
+            try:
+                caminho_imagem = os.path.join(config.CAMERA_INDEX, nome_arquivo)
+                print(f"\n --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ")
+                print(f"\n Processando imagem: {caminho_imagem}...")
 
-            # Chama a função de detecção e rastreamento
-            frame_processado = detectar_e_rastrear(frame) # detectar_e_rastrear espera modificar o frame
+                frame = cv2.imread(caminho_imagem)
+                if frame is None:
+                    print(f"Não foi possível ler a imagem: {caminho_imagem}")
+                    continue
 
-            cv2.imshow('Imagem Processada', frame_processado)
-            
-            # Salva a imagem processada
-            nome_saida = f"proc_{nome_arquivo}"
-            caminho_saida = os.path.join(config.PASTA_SAIDA_IMAGENS, nome_saida)
-            cv2.imwrite(caminho_saida, frame_processado)
-            print(f"Imagem processada salva em: {caminho_saida}")
+                detectar_e_rastrear(frame)
 
-            if cv2.waitKey(0) & 0xFF == ord('q'): # Espera tecla 'q' para sair ou qualquer outra para continuar
-                 break 
-    cv2.destroyAllWindows()
+                nome_saida = f"proc_{nome_arquivo}"
+                caminho_saida = os.path.join(config.PASTA_SAIDA_IMAGENS, nome_saida)
+                print(f"Imagem processada salva em: {caminho_saida}")
+                time.sleep(1)
+            except Exception as e:
+                print(f"Erro ao processar a imagem {nome_arquivo}: {e}")
     ocr_executor.shutdown(wait=True)
     print("Processamento de imagens da pasta concluído.")
-'''
+
 
 if __name__ == "__main__":
     # Para rodar com a câmera:
     main_loop_camera()
     
     # Para rodar com imagens de uma pasta (descomente a linha abaixo e comente main_loop_camera()):
-    # processar_imagens_pasta(PASTA_IMAGENS_TESTE)
+    #processar_imagens_pasta()

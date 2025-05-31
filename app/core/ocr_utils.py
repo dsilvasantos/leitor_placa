@@ -5,6 +5,9 @@ import re
 import core.config as config
 from core.image_processing_utils import preprocessar_roi_placa #, salvar_imagem_debug
 
+#ARQUIVO_PLACAS = config.ARQUIVO_PLACAS
+#open(ARQUIVO_PLACAS, 'w').close()
+
 # Inicializa o reader do EasyOCR uma vez quando o módulo é carregado
 try:
     print("Inicializando EasyOCR Reader...")
@@ -88,7 +91,7 @@ def validar_e_formatar_placa(texto_ocr):
         return texto_corrigido_numeros
     
 
-    #Se o tecto original não bate, letras e núemros idem tenta com a correção de letras e números
+    #Se o texto original não bate, letras e núemros idem tenta com a correção de letras e números
     texto_corrigido_numeros_e_letras = substituir_caracteres_similares_numeros(texto_corrigido_letras)
 
     if re.fullmatch(padrao_tradicional, texto_corrigido_numeros_e_letras) or \
@@ -116,45 +119,49 @@ def executar_ocr_em_roi(roi_placa_original, nome_base_debug, contador_debug):
     imagem_placa_preprocessada = preprocessar_roi_placa(roi_placa_original, nome_base_debug, contador_debug)
 
     if imagem_placa_preprocessada is None or imagem_placa_preprocessada.size == 0:
-        # print(f"[AVISO OCR] Imagem pré-processada da placa vazia para {nome_base_debug}_{contador_debug}, pulando OCR.")
         return []
-
-    # salvar_imagem_debug("para_ocr", imagem_placa_preprocessada, nome_base_debug, contador_debug)
 
     placas_validadas = []
     try:
         # Executa o OCR
         resultados_ocr = reader_ocr.readtext(imagem_placa_preprocessada, allowlist=config.OCR_ALLOWED_LIST, paragraph=False)
         
-        # print(f"[DEBUG OCR {nome_base_debug}_{contador_debug}] Resultados: {resultados_ocr}")
-
         if not resultados_ocr: # Nenhum texto detectado
             return placas_validadas
 
-        texto_completo_placa = ""
-        # Heurística para juntar pedaços de texto se o OCR dividir a placa
-        # Pode ser necessário ajustar a lógica de junção baseada na performance do OCR
-        if len(resultados_ocr) == 1:
-            texto_completo_placa = resultados_ocr[0][1]
-        elif len(resultados_ocr) > 1:
-            # Tenta concatenar os resultados se parecerem ser da mesma placa
-            # Considera apenas textos com alta confiança ou ajusta conforme necessário
-            texto_concatenado = "".join([res[1] for res in resultados_ocr if res[2] > 0.3]) # Exemplo de filtro de confiança
-            if len(texto_concatenado) >= 7: # Se o texto concatenado tem pelo menos 7 caracteres
-                 texto_completo_placa = texto_concatenado
-            else: # Pega o texto com maior confiança se a concatenação não for boa
-                melhor_resultado = max(resultados_ocr, key=lambda x: x[2])
-                texto_completo_placa = melhor_resultado[1]
+        placa = ''
+        placa_moto = ["",""]
+        
+        for _, texto, _ in resultados_ocr:
+            print("Texto : " + texto)
+            texto = texto.upper().replace(" ", "").strip()
+            if 7 == len(texto) :
+                placa = texto
+                break
+            elif 3 == len(texto) :
+                placa_moto[0] = texto
+            elif 4  == len(texto) :
+                placa_moto[1] = texto
+            else :
+                continue
 
+        if  len(placa_moto[0]) == 3 and len(placa_moto[1]) == 4 :
+            placa = placa_moto[0] + placa_moto[1]
+
+        print("Texto OCR unido:", placa)
 
         # Validação e formatação da placa
-        placa_formatada = validar_e_formatar_placa(texto_completo_placa)
+        placa_formatada = validar_e_formatar_placa(placa)
         if placa_formatada:
             placas_validadas.append(placa_formatada)
-            # print(f"[DEBUG OCR {nome_base_debug}_{contador_debug}] Placa Validada: {placa_formatada} (Original: {texto_completo_placa})")
-
-
+    
+    
     except Exception as e:
         print(f"[ERRO OCR] Exceção durante o readtext ou processamento: {e}")
 
+    '''''
+    with open(ARQUIVO_PLACAS, 'a') as f:
+        for p in placas_validadas:
+            f.write(f"{nome_base_debug}_{contador_debug}: {p}\n")
+    '''
     return placas_validadas

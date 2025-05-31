@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+*imagens*
+*saida_deteccoes*
+*placas_detectadas*
 # Distribution / packaging
 .eggs/
 dist/
@@ -16,6 +19,8 @@ sdist/
 venv/
 env/
 ENV/
+
+
 
 # PyInstaller
 #  Often these are written to the current working directory

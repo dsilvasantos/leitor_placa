@@ -82,28 +82,40 @@ def preprocessar_roi_placa(roi_placa, nome_base_debug, contador_debug):
         nova_altura = int(h * config.ROI_PLACA_RESIZE_ESCALA_Y)
         if nova_largura > 0 and nova_altura > 0:
             imagem = cv2.resize(imagem, (nova_largura, nova_altura), interpolation=cv2.INTER_CUBIC)
-        # salvar_imagem_debug("redimensionada_inicial", imagem, nome_base_debug, contador_debug)
+        #salvar_imagem_debug("redimensionada_inicial", imagem, nome_base_debug, contador_debug)
 
 
     imagem_cinza = cv2.cvtColor(imagem, cv2.COLOR_BGR2GRAY)
-    # salvar_imagem_debug("cinza", imagem_cinza, nome_base_debug, contador_debug)
+    #salvar_imagem_debug("cinza", imagem_cinza, nome_base_debug, contador_debug)
 
     imagem_clahe = aplicar_clahe(imagem_cinza)
-    # salvar_imagem_debug("clahe", imagem_clahe, nome_base_debug, contador_debug)
+    #salvar_imagem_debug("clahe", imagem_clahe, nome_base_debug, contador_debug)
     
     # Redimensiona novamente se ainda for pequena para OCR, após CLAHE
     if imagem_clahe.shape[0] < 100 or imagem_clahe.shape[1] < 200: # Limiares podem precisar de ajuste
         if imagem_clahe.shape[0] > 0 and imagem_clahe.shape[1] > 0:
             imagem_clahe = cv2.resize(imagem_clahe, None, fx=config.ROI_PLACA_FINAL_RESIZE_FX, fy=config.ROI_PLACA_FINAL_RESIZE_FY, interpolation=cv2.INTER_CUBIC)
-            # salvar_imagem_debug("redimensionada_final", imagem_clahe, nome_base_debug, contador_debug)
+            #salvar_imagem_debug("redimensionada_final", imagem_clahe, nome_base_debug, contador_debug)
 
     imagem_perspectiva = corrigir_perspectiva(imagem_clahe)
     if imagem_perspectiva is None: # Se a correção de perspectiva falhar
         imagem_perspectiva = imagem_clahe # Usa a imagem anterior
-    # salvar_imagem_debug("perspectiva", imagem_perspectiva, nome_base_debug, contador_debug)
+    #salvar_imagem_debug("perspectiva", imagem_perspectiva, nome_base_debug, contador_debug)
     
     # Binarização com Otsu
     _, imagem_binarizada = cv2.threshold(imagem_perspectiva, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    # salvar_imagem_debug("binarizada", imagem_binarizada, nome_base_debug, contador_debug)
+    #salvar_imagem_debug("binarizada", imagem_binarizada, nome_base_debug, contador_debug)
 
-    return imagem_binarizada
+
+    kernel = np.ones((2,2),np.uint8) # Kernel pequeno
+    imagem_limpa = cv2.morphologyEx(imagem_binarizada, cv2.MORPH_OPEN, kernel)
+    #salvar_imagem_debug("07_morf_open", imagem_limpa, nome_base_debug, contador_debug)
+
+ 
+    padding = 10
+    imagem_final_ocr_com_padding = cv2.copyMakeBorder(imagem_limpa, padding, padding, padding, padding,
+                                                 cv2.BORDER_CONSTANT, value=[255]) # Borda branca para imagem binarizada
+    #salvar_imagem_debug("09_padding", imagem_final_ocr_com_padding, nome_base_debug, contador_debug)
+
+
+    return imagem_final_ocr_com_padding
