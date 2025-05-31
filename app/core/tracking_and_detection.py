@@ -224,9 +224,7 @@ def detectar_e_rastrear(frame_original):
     tracks_com_ocr_submetido_neste_frame = set()
 
 
-
     for track in tracks:
-        print(f"Track ID: {track.track_id}, Hits: {track.hits}, Age: {track.age}, State: {track.state}, Confirmed: {track.is_confirmed()}")
         if not track.is_confirmed():  
             continue
 

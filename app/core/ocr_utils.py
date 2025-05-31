@@ -148,8 +148,6 @@ def executar_ocr_em_roi(roi_placa_original, nome_base_debug, contador_debug):
         if  len(placa_moto[0]) == 3 and len(placa_moto[1]) == 4 :
             placa = placa_moto[0] + placa_moto[1]
 
-        print("Texto OCR unido:", placa)
-
         # Validação e formatação da placa
         placa_formatada = validar_e_formatar_placa(placa)
         if placa_formatada:
