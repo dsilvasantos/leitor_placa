@@ -125,7 +125,7 @@ def processar_placa_identificada(placa_ocr, frame_para_desenho, bbox_veiculo_abs
     cv2.putText(frame_para_desenho, f"{placa_ocr} - {status_texto}", (x1_car, y1_car - 10),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, cor_retangulo, 2)
     
-    print(f"{datetime.now()} - Veículo ID {track_id_veiculo} - Placa: {placa_ocr} - Status: {status_texto}")
+    #print(f"{datetime.now()} - Veículo ID {track_id_veiculo} - Placa: {placa_ocr} - Status: {status_texto}")
 
 
 def detectar_e_rastrear(frame_original):
@@ -151,59 +151,58 @@ def detectar_e_rastrear(frame_original):
     deteccoes_para_tracker = []
     map_bbox_original_veiculo = {} 
     IDS_VEICULOS_INTERESSE = {2, 3, 5, 7} # carro, moto, onibus, caminhao
+
+    altura_frame, largura_frame = frame_original.shape[:2]
+    centro_frame_x = largura_frame // 2
+    centro_frame_y = altura_frame // 2
+
+    def distancia_do_centro(bbox):
+        x1, y1, w, h = bbox
+        cx = x1 + w // 2
+        cy = y1 + h // 2
+        return ((cx - centro_frame_x) ** 2 + (cy - centro_frame_y) ** 2) ** 0.5
+
+    veiculos_detectados = []
     for res_carro in resultados_carros:
-
-        melhor_deteccao_neste_res = None
-        maior_confianca_neste_res = 0.1 
-
         for box in res_carro.boxes:
             try:
-                cls = int(box.cls[0] if hasattr(box.cls, '__getitem__') else box.cls)
-                conf = float(box.conf[0] if hasattr(box.conf, '__getitem__') else box.conf)
+                cls = int(box.cls[0]) if hasattr(box.cls, '__getitem__') else int(box.cls)
+                conf = float(box.conf[0]) if hasattr(box.conf, '__getitem__') else float(box.conf)
+
                 if cls in IDS_VEICULOS_INTERESSE:
-                    if conf > maior_confianca_neste_res:
-                        # Esta é a melhor detecção de veículo encontrada até agora para este res_carro
-                        maior_confianca_neste_res = conf
-                        
-                        coords = box.xyxy[0] if hasattr(box.xyxy, '__getitem__') and len(box.xyxy) > 0 else box.xyxy
-                        x1, y1, x2, y2 = map(int, coords)
+                    coords = box.xyxy[0] if hasattr(box.xyxy, '__getitem__') else box.xyxy
+                    x1, y1, x2, y2 = map(int, coords)
+                    largura = x2 - x1
+                    altura = y2 - y1
+                    area = largura * altura
 
-                        largura = x2 - x1
-                        altura = y2 - y1
-
-                        if largura > 0 and altura > 0:
-                            melhor_deteccao_neste_res = ([x1, y1, largura, altura], conf, "veiculo_generico", cls)
-            
+                    if largura > 0 and altura > 0:
+                        veiculos_detectados.append(((x1, y1, largura, altura), conf, area, cls))
             except Exception as e:
-                print(f"Erro ao processar uma caixa de detecção: {e}")
-                continue 
+                print(f"Erro ao processar caixa de detecção: {e}")
+                continue
 
+    veiculos_detectados.sort(key=lambda x: (distancia_do_centro(x[0]), -x[2]))
 
-        if melhor_deteccao_neste_res is not None:
-            bbox_data, confianca, _, classe_id = melhor_deteccao_neste_res
-            x1_veiculo, y1_veiculo, largura_veiculo, altura_veiculo = bbox_data
+    if veiculos_detectados: 
+        bbox_data, conf, area, classe_id = veiculos_detectados[0]
+        x1_veiculo, y1_veiculo, largura_veiculo, altura_veiculo = bbox_data
+        x2_veiculo = x1_veiculo + largura_veiculo
+        y2_veiculo = y1_veiculo + altura_veiculo
 
+        x1_roi = max(0, x1_veiculo)
+        y1_roi = max(0, y1_veiculo)
+        x2_roi = min(largura_frame, x2_veiculo)
+        y2_roi = min(altura_frame, y2_veiculo)
 
-            x2_veiculo = x1_veiculo + largura_veiculo
-            y2_veiculo = y1_veiculo + altura_veiculo
+        if x1_roi < x2_roi and y1_roi < y2_roi:
+            roi_veiculo = frame_original[y1_roi:y2_roi, x1_roi:x2_roi]
+        else:
+            roi_veiculo = None
 
-
-            altura_frame, largura_frame = frame_original.shape[:2]
-
-
-            x1_roi = max(0, x1_veiculo)
-            y1_roi = max(0, y1_veiculo)
-            x2_roi = min(largura_frame, x2_veiculo)
-            y2_roi = min(altura_frame, y2_veiculo)
-
-
-            if x1_roi < x2_roi and y1_roi < y2_roi:
-                roi_veiculo = frame_original[y1_roi:y2_roi, x1_roi:x2_roi]
-            else:
-                roi_veiculo = None 
-
-            deteccoes_para_tracker.append(melhor_deteccao_neste_res) 
-
+        deteccoes_para_tracker.append((bbox_data, conf, "veiculo_generico", classe_id))
+    else:
+        roi_veiculo = None
 
     # 2. Atualização do rastreador DeepSort
     tracks = tracker.update_tracks(deteccoes_para_tracker, frame=frame_processamento)
@@ -220,8 +219,8 @@ def detectar_e_rastrear(frame_original):
     tracks_com_ocr_submetido_neste_frame = set()
 
     for track in tracks:
-        if not track.is_confirmed():
-            continue
+        #if not track.is_confirmed():
+            #continue
 
         track_id = track.track_id
         x1_t, y1_t, x2_t, y2_t = map(int, track.to_ltrb()) 
@@ -252,20 +251,24 @@ def detectar_e_rastrear(frame_original):
 
         if track_id in tracks_com_ocr_submetido_neste_frame:
             continue
+
+
+
         
         # Debug: nome base para salvar imagens
         nome_base_debug = f"track{track_id}_frame{random.randint(1000,9999)}"
-        #img_proc.salvar_imagem_debug("carro_original", roi_veiculo, nome_base_debug, 0)
+        img_proc.salvar_imagem_debug("carro_original", frame_processamento, nome_base_debug, 0)
+        img_proc.salvar_imagem_debug("carro_original2", roi_veiculo, nome_base_debug, 0)
 
         # Ajuste de brilho no ROI do veículo (opcional, pode ser feito no ROI da placa)
         brilho_roi_veiculo = img_proc.verificar_brilho(roi_veiculo)
         roi_veiculo_ajustado = roi_veiculo
         if brilho_roi_veiculo < config.BRILHO_MINIMO_NOTURNO:
             roi_veiculo_ajustado = img_proc.melhorar_visao_noturna(roi_veiculo)
-            # img_proc.salvar_imagem_debug("carro_noturno", roi_veiculo_ajustado, nome_base_debug, 0)
+            img_proc.salvar_imagem_debug("carro_noturno", roi_veiculo_ajustado, nome_base_debug, 0)
         elif brilho_roi_veiculo > config.BRILHO_MAXIMO_CLARO:
             roi_veiculo_ajustado = img_proc.melhorar_visao_clara(roi_veiculo)
-            # img_proc.salvar_imagem_debug("carro_claro", roi_veiculo_ajustado, nome_base_debug, 0)
+            img_proc.salvar_imagem_debug("carro_claro", roi_veiculo_ajustado, nome_base_debug, 0)
 
         # Detecção de placas no ROI do veículo ajustado
         resultados_roi_placa = modelo_placa(roi_veiculo_ajustado, conf=0.25, verbose=False) # Ajustar conf para placas

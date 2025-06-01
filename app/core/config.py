@@ -17,18 +17,14 @@ DEEPSORT_MAX_AGE = 5 # tempo de vida de um ID após sumir do frame
 OCR_ALLOWED_LIST = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
 
 # Configurações da Câmera
-#CAMERA_INDEX = "imagens" # Ou o caminho para um arquivo de vídeo
-CAMERA_INDEX = 1 # Ou o caminho para um arquivo de vídeo
+CAMERA_INDEX = "imagens" # Ou o caminho para um arquivo de vídeo
+#CAMERA_INDEX = 1 # Ou o caminho para um arquivo de vídeo
 
 # Limites de pré-processamento
 BRILHO_MINIMO_NOTURNO = 50
 BRILHO_MAXIMO_CLARO = 150
-ROI_PLACA_MIN_ALTURA = 30
-ROI_PLACA_MIN_LARGURA = 100
-ROI_PLACA_RESIZE_ESCALA_X = 1.5
-ROI_PLACA_RESIZE_ESCALA_Y = 2.0
-ROI_PLACA_FINAL_RESIZE_FX = 2.0
-ROI_PLACA_FINAL_RESIZE_FY = 2.0
+ROI_PLACA_MIN_ALTURA = 100
+ROI_PLACA_MIN_LARGURA = 300
 
 # Executor OCR
 OCR_MAX_WORKERS = 6
