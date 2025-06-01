@@ -21,7 +21,7 @@ CAMERA_INDEX = "imagens" # Ou o caminho para um arquivo de vídeo
 #CAMERA_INDEX = 1 # Ou o caminho para um arquivo de vídeo
 
 # Limites de pré-processamento
-BRILHO_MINIMO_NOTURNO = 50
+BRILHO_MINIMO_NOTURNO = 80
 BRILHO_MAXIMO_CLARO = 150
 ROI_PLACA_MIN_ALTURA = 100
 ROI_PLACA_MIN_LARGURA = 300

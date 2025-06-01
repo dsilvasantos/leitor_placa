@@ -130,6 +130,7 @@ def executar_ocr_em_roi(roi_placa_original, nome_base_debug, contador_debug):
         placa_moto = ["",""]
         
         for _, texto, _ in resultados_ocr:
+            #print("---------------------------------- Texto: " + texto)
             texto = texto.upper().replace(" ", "").strip()
             if 7 == len(texto) :
                 placa = texto
@@ -144,8 +145,10 @@ def executar_ocr_em_roi(roi_placa_original, nome_base_debug, contador_debug):
         if  len(placa_moto[0]) == 3 and len(placa_moto[1]) == 4 :
             placa = placa_moto[0] + placa_moto[1]
 
+        #print("---------------------------------- Placa: " + placa)
+
         placa_formatada = validar_e_formatar_placa(placa)
-        if placa_formatada:
+        if placa_formatada and placa_formatada not in placas_validadas:
             placas_validadas.append(placa_formatada)
     
     
