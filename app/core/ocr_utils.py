@@ -5,8 +5,8 @@ import re
 import core.config as config
 from core.image_processing_utils import preprocessar_roi_placa #, salvar_imagem_debug
 
-#ARQUIVO_PLACAS = config.ARQUIVO_PLACAS
-#open(ARQUIVO_PLACAS, 'w').close()
+ARQUIVO_PLACAS = config.ARQUIVO_PLACAS
+open(ARQUIVO_PLACAS, 'w').close()
 
 # Inicializa o reader do EasyOCR uma vez quando o módulo é carregado
 try:
@@ -38,7 +38,7 @@ def substituir_caracteres_similares_numeros(texto):
     """Corrige números que podem ser confundidas com letras (ex: O -> 0)."""
     substituicoes = {'O': '0', 'I': '1', 'S': '5', 'B': '8'}
     texto_corrigido = list(texto)
-    # Aplica nos caracteres que deveriam ser números
+
     indices_numeros_trad = [3, 4, 5, 6]
     indices_numeros_merco = [3, 5, 6]
 
@@ -112,10 +112,8 @@ def executar_ocr_em_roi(roi_placa_original, nome_base_debug, contador_debug):
         return []
         
     if roi_placa_original is None or roi_placa_original.size == 0:
-        # print(f"[AVISO OCR] ROI de placa vazio em {nome_base_debug}_{contador_debug}, pulando OCR.")
         return []
 
-    # Pré-processamento da imagem da placa
     imagem_placa_preprocessada = preprocessar_roi_placa(roi_placa_original, nome_base_debug, contador_debug)
 
     if imagem_placa_preprocessada is None or imagem_placa_preprocessada.size == 0:
@@ -123,17 +121,15 @@ def executar_ocr_em_roi(roi_placa_original, nome_base_debug, contador_debug):
 
     placas_validadas = []
     try:
-        # Executa o OCR
         resultados_ocr = reader_ocr.readtext(imagem_placa_preprocessada, allowlist=config.OCR_ALLOWED_LIST, paragraph=False)
         
-        if not resultados_ocr: # Nenhum texto detectado
+        if not resultados_ocr: 
             return placas_validadas
 
         placa = ''
         placa_moto = ["",""]
         
         for _, texto, _ in resultados_ocr:
-            print("Texto : " + texto)
             texto = texto.upper().replace(" ", "").strip()
             if 7 == len(texto) :
                 placa = texto
@@ -148,7 +144,6 @@ def executar_ocr_em_roi(roi_placa_original, nome_base_debug, contador_debug):
         if  len(placa_moto[0]) == 3 and len(placa_moto[1]) == 4 :
             placa = placa_moto[0] + placa_moto[1]
 
-        # Validação e formatação da placa
         placa_formatada = validar_e_formatar_placa(placa)
         if placa_formatada:
             placas_validadas.append(placa_formatada)
@@ -157,9 +152,9 @@ def executar_ocr_em_roi(roi_placa_original, nome_base_debug, contador_debug):
     except Exception as e:
         print(f"[ERRO OCR] Exceção durante o readtext ou processamento: {e}")
 
-    '''''
+    
     with open(ARQUIVO_PLACAS, 'a') as f:
         for p in placas_validadas:
             f.write(f"{nome_base_debug}_{contador_debug}: {p}\n")
-    '''
+    
     return placas_validadas

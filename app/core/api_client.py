@@ -22,7 +22,7 @@ def verificar_placa_api(placa, api_base_url):
 def registrar_captura(
     placa: str, 
     status_liberado: str, 
-    imagem_veiculo_roi, # Espera um array numpy como imagem
+    imagem_veiculo_roi, 
     api_url_base
 ):
     """
@@ -48,17 +48,14 @@ def registrar_captura(
   
     files_to_send = None
     try:
-        # Codificar a imagem para JPEG em memória
         is_success, buffer_img = cv2.imencode(".jpg", imagem_veiculo_roi)
         if not is_success:
             raise ValueError("Erro ao codificar a imagem do veículo para JPEG.")
         
-        # A chave DEVE ser 'imagem' para coincidir com o servidor FastAPI
         files_to_send = {
             'imagem': ('veiculo.jpg', io.BytesIO(buffer_img.tobytes()), 'image/jpeg')
         }
 
-          # Dados do formulário (sem a imagem)
         payload_data = {
         "placa": placa,
         "status": status_liberado
