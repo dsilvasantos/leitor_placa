@@ -219,8 +219,8 @@ def detectar_e_rastrear(frame_original):
     tracks_com_ocr_submetido_neste_frame = set()
 
     for track in tracks:
-        #if not track.is_confirmed():
-            #continue
+        if not track.is_confirmed():
+            continue
 
         track_id = track.track_id
         x1_t, y1_t, x2_t, y2_t = map(int, track.to_ltrb()) 
@@ -257,21 +257,21 @@ def detectar_e_rastrear(frame_original):
         
         # Debug: nome base para salvar imagens
         nome_base_debug = f"track{track_id}_frame{random.randint(1000,9999)}"
-        img_proc.salvar_imagem_debug("carro_original", frame_processamento, nome_base_debug, 0)
-        img_proc.salvar_imagem_debug("carro_original2", roi_veiculo, nome_base_debug, 0)
+        #img_proc.salvar_imagem_debug("carro_original", frame_processamento, nome_base_debug, 0)
+        #img_proc.salvar_imagem_debug("carro_original2", roi_veiculo, nome_base_debug, 0)
 
         # Ajuste de brilho no ROI do veículo (opcional, pode ser feito no ROI da placa)
         brilho_roi_veiculo = img_proc.verificar_brilho(roi_veiculo)
         roi_veiculo_ajustado = roi_veiculo
         if brilho_roi_veiculo < config.BRILHO_MINIMO_NOTURNO:
             roi_veiculo_ajustado = img_proc.melhorar_visao_noturna(roi_veiculo)
-            img_proc.salvar_imagem_debug("carro_noturno", roi_veiculo_ajustado, nome_base_debug, 0)
+            #img_proc.salvar_imagem_debug("carro_noturno", roi_veiculo_ajustado, nome_base_debug, 0)
         elif brilho_roi_veiculo > config.BRILHO_MAXIMO_CLARO:
             roi_veiculo_ajustado = img_proc.melhorar_visao_clara(roi_veiculo)
-            img_proc.salvar_imagem_debug("carro_claro", roi_veiculo_ajustado, nome_base_debug, 0)
+            #img_proc.salvar_imagem_debug("carro_claro", roi_veiculo_ajustado, nome_base_debug, 0)
 
         # Detecção de placas no ROI do veículo ajustado
-        resultados_roi_placa = modelo_placa(roi_veiculo_ajustado, conf=0.25, verbose=False) # Ajustar conf para placas
+        resultados_roi_placa = modelo_placa(roi_veiculo_ajustado, conf=config.CONFIANCA_MODELO_PLACA, verbose=False) 
 
         placa_idx_counter = 0
         for res_placa in resultados_roi_placa:

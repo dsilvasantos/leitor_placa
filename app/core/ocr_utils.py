@@ -155,9 +155,9 @@ def executar_ocr_em_roi(roi_placa_original, nome_base_debug, contador_debug):
     except Exception as e:
         print(f"[ERRO OCR] Exceção durante o readtext ou processamento: {e}")
 
-    
+    '''''
     with open(ARQUIVO_PLACAS, 'a') as f:
         for p in placas_validadas:
             f.write(f"{nome_base_debug}_{contador_debug}: {p}\n")
-    
+    '''
     return placas_validadas

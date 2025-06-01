@@ -17,8 +17,8 @@ DEEPSORT_MAX_AGE = 5 # tempo de vida de um ID após sumir do frame
 OCR_ALLOWED_LIST = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
 
 # Configurações da Câmera
-CAMERA_INDEX = "imagens" # Ou o caminho para um arquivo de vídeo
-#CAMERA_INDEX = 1 # Ou o caminho para um arquivo de vídeo
+#CAMERA_INDEX = "imagens" # Ou o caminho para um arquivo de vídeo
+CAMERA_INDEX = 1 # Ou o caminho para um arquivo de vídeo
 
 # Limites de pré-processamento
 BRILHO_MINIMO_NOTURNO = 80
@@ -32,3 +32,4 @@ OCR_MAX_WORKERS = 6
 
 # Confiança modelo
 CONFIANCA_MODELO_AUTOMOVEL = 0.3
+CONFIANCA_MODELO_PLACA = 0.3

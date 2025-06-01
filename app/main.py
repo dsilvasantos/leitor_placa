@@ -37,19 +37,7 @@ def main_loop_camera():
         if not ret:
             print("Não foi possível ler o frame da câmera ou o vídeo terminou.")
             break
-
-        frame_count += 1
-        # if config.PROCESSAR_CADA_N_FRAMES > 1 and frame_count % config.PROCESSAR_CADA_N_FRAMES != 0:
-        #     # Pula o processamento deste frame, mas ainda exibe (ou exibe o anterior)
-        #     if 'processed_frame' in locals(): # Exibe o último processado
-        #          cv2.imshow("Leitura de Placas - ALPR", processed_frame)
-        #     else: # Exibe o frame atual sem processamento
-        #          cv2.imshow("Leitura de Placas - ALPR", frame)
-        #     key = cv2.waitKey(1) & 0xFF
-        #     if key == ord('q'): break
-        #     continue
-
-
+      
         # Chama a função de detecção e rastreamento que agora modifica o frame
         processed_frame = detectar_e_rastrear(frame)
 
@@ -102,7 +90,7 @@ def processar_imagens_pasta():
                 nome_saida = f"proc_{nome_arquivo}"
                 caminho_saida = os.path.join(config.PASTA_SAIDA_IMAGENS, nome_saida)
                 print(f"Imagem processada salva em: {caminho_saida}")
-                time.sleep(1)
+                
             except Exception as e:
                 print(f"Erro ao processar a imagem {nome_arquivo}: {e}")
     ocr_executor.shutdown(wait=True)
