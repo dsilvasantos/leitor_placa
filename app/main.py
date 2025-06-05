@@ -73,6 +73,8 @@ def processar_imagens_pasta():
         print(f"Pasta de imagens de teste '{config.CAMERA_INDEX}' não encontrada.")
         return
 
+    tempos_de_execucao = []
+    qtde_exec = 0
     for nome_arquivo in os.listdir(config.CAMERA_INDEX):
         if nome_arquivo.lower().endswith((".jpg", ".jpeg", ".png")):
             try:
@@ -85,8 +87,14 @@ def processar_imagens_pasta():
                     print(f"Não foi possível ler a imagem: {caminho_imagem}")
                     continue
 
+                inicio = time.perf_counter() # Registra o tempo de início com alta precisão
+
                 detectar_e_rastrear(frame)
 
+                fim = time.perf_counter()    # Registra o tempo de fim com alta precisão
+                time.sleep(2)
+                tempos_de_execucao.append(fim - inicio)
+                qtde_exec = qtde_exec + 1
                 nome_saida = f"proc_{nome_arquivo}"
                 caminho_saida = os.path.join(config.PASTA_SAIDA_IMAGENS, nome_saida)
                 print(f"Imagem processada salva em: {caminho_saida}")
@@ -95,7 +103,12 @@ def processar_imagens_pasta():
                 print(f"Erro ao processar a imagem {nome_arquivo}: {e}")
     ocr_executor.shutdown(wait=True)
     print("Processamento de imagens da pasta concluído.")
+    tempo_total = sum(tempos_de_execucao)
+    tempo_medio = tempo_total / qtde_exec
 
+
+    print(f"Tempo total de execução para {qtde_exec} chamadas: {tempo_total:.6f} segundos")
+    print(f"Tempo médio de processamento por chamada: {tempo_medio:.6f} segundos")
 
 if __name__ == "__main__":
     # Para rodar com a câmera:

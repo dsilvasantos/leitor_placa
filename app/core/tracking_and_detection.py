@@ -219,13 +219,13 @@ def detectar_e_rastrear(frame_original):
     tracks_com_ocr_submetido_neste_frame = set()
 
     for track in tracks:
-        if not track.is_confirmed():
-            continue
+        #if not track.is_confirmed():
+        #    continue
 
         track_id = track.track_id
         x1_t, y1_t, x2_t, y2_t = map(int, track.to_ltrb()) 
         map_bbox_original_veiculo[track_id] = (x1_t, y1_t, x2_t, y2_t)
-
+        '''''       
         # Se o veículo já foi liberado, apenas desenha o status e continua
         if track_id in veiculos_liberados_rastreados:
             placa = placas_associadas_veiculo.get(track_id, "N/A")
@@ -251,8 +251,7 @@ def detectar_e_rastrear(frame_original):
 
         if track_id in tracks_com_ocr_submetido_neste_frame:
             continue
-
-
+        '''
 
         
         # Debug: nome base para salvar imagens
@@ -263,6 +262,7 @@ def detectar_e_rastrear(frame_original):
         # Ajuste de brilho no ROI do veículo (opcional, pode ser feito no ROI da placa)
         brilho_roi_veiculo = img_proc.verificar_brilho(roi_veiculo)
         roi_veiculo_ajustado = roi_veiculo
+        print(brilho_roi_veiculo)
         if brilho_roi_veiculo < config.BRILHO_MINIMO_NOTURNO:
             roi_veiculo_ajustado = img_proc.melhorar_visao_noturna(roi_veiculo)
             #img_proc.salvar_imagem_debug("carro_noturno", roi_veiculo_ajustado, nome_base_debug, 0)
