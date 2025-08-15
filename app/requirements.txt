@@ -3,5 +3,7 @@ psycopg2-binary
 requests
 easyocr
 pytesseract
-opencv-python
 deep_sort_realtime
+ultralytics
+opencv-python-headless
+opencv-contrib-python
