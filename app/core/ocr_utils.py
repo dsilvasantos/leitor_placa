@@ -3,6 +3,7 @@
 import easyocr
 import re
 import core.config as config
+import torch
 from core.image_processing_utils import preprocessar_roi_placa #, salvar_imagem_debug
 
 ARQUIVO_PLACAS = config.ARQUIVO_PLACAS
@@ -10,9 +11,10 @@ open(ARQUIVO_PLACAS, 'w').close()
 
 # Inicializa o reader do EasyOCR uma vez quando o módulo é carregado
 try:
-    print("Inicializando EasyOCR Reader...")
+    print("Inicializando EasyOCR Reader com GPU...")
     reader_ocr = easyocr.Reader(['pt'], gpu=True, detect_network="craft", verbose=False)
-    print("EasyOCR Reader inicializado.")
+    print(torch.cuda.get_device_name(0))
+    print("EasyOCR Reader inicializado com GPU.")
 except Exception as e:
     print(f"Erro ao inicializar EasyOCR: {e}")
     print("Tentando inicializar EasyOCR com GPU=False.")
@@ -155,9 +157,9 @@ def executar_ocr_em_roi(roi_placa_original, nome_base_debug, contador_debug):
         print(f"[ERRO OCR] Exceção durante o readtext ou processamento: {e}")
 
     
-    with open(ARQUIVO_PLACAS, 'a') as f:
-        for p in placas_validadas:
-            f.write(f"{nome_base_debug}_{contador_debug}: {p}\n")
+    #with open(ARQUIVO_PLACAS, 'a') as f:
+        #for p in placas_validadas:
+            #f.write(f"{nome_base_debug}_{contador_debug}: {p}\n")
     
-    print(placas_validadas)
+    #print(placas_validadas)
     return placas_validadas

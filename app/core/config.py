@@ -17,8 +17,8 @@ DEEPSORT_MAX_AGE = 1 # tempo de vida de um ID após sumir do frame
 OCR_ALLOWED_LIST = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
 
 # Configurações da Câmera
-CAMERA_INDEX = "imagens" # Ou o caminho para um arquivo de vídeo
-#CAMERA_INDEX = 2 # Ou o caminho para um arquivo de vídeo
+#CAMERA_INDEX = "imagens" # Ou o caminho para um arquivo de vídeo
+CAMERA_INDEX = 0 # Ou o caminho para um arquivo de vídeo
 
 # Limites de pré-processamento
 BRILHO_MINIMO_NOTURNO = 65
