@@ -5,6 +5,8 @@ import re
 import core.config as config
 import torch
 from core.image_processing_utils import preprocessar_roi_placa #, salvar_imagem_debug
+from typing import List, Tuple
+import cv2
 
 ARQUIVO_PLACAS = config.ARQUIVO_PLACAS
 open(ARQUIVO_PLACAS, 'w').close()
@@ -104,6 +106,32 @@ def validar_e_formatar_placa(texto_ocr):
     return None
 
 
+def extrai_placa_carro_ou_moto(resultados_ocr):
+    
+    if not resultados_ocr:
+        return []
+    
+    placa = ''
+    placa_moto = ["",""]
+        
+    for _, texto, _ in resultados_ocr:
+        texto = texto.upper().replace(" ", "").strip()
+        if 7 == len(texto) :
+            placa = texto
+            break
+        elif 3 == len(texto) :
+            placa_moto[0] = texto
+        elif 4  == len(texto) :
+            placa_moto[1] = texto
+        else :
+            continue
+
+    if  len(placa_moto[0]) == 3 and len(placa_moto[1]) == 4 :
+        placa = placa_moto[0] + placa_moto[1]
+
+    return placa or None
+
+
 def executar_ocr_em_roi(roi_placa_original, nome_base_debug, contador_debug):
     """
     Executa o OCR em uma Região de Interesse (ROI) da placa.
@@ -118,48 +146,39 @@ def executar_ocr_em_roi(roi_placa_original, nome_base_debug, contador_debug):
 
     imagem_placa_preprocessada = preprocessar_roi_placa(roi_placa_original, nome_base_debug, contador_debug)
 
-    if imagem_placa_preprocessada is None or imagem_placa_preprocessada.size == 0:
-        return []
+    def _read(img):
+        return reader_ocr.readtext(img, allowlist=config.OCR_ALLOWED_LIST, paragraph=False)
 
-    placas_validadas = []
+    resultados = []
+
     try:
-        resultados_ocr = reader_ocr.readtext(imagem_placa_preprocessada, allowlist=config.OCR_ALLOWED_LIST, paragraph=False)
-        if not resultados_ocr: 
-            return placas_validadas
+        if imagem_placa_preprocessada is not None and imagem_placa_preprocessada.size > 0:
+            placa = extrai_placa_carro_ou_moto(_read(imagem_placa_preprocessada))
+            if placa and placa not in resultados:
+                resultados.append(placa)
+        if not resultados:
+            imagem_cinza = cv2.cvtColor(roi_placa_original, cv2.COLOR_BGR2GRAY) if roi_placa_original.ndim == 3 else roi_placa_original
+            placa = extrai_placa_carro_ou_moto(_read(imagem_cinza))
+            if placa and placa not in resultados:
+                resultados.append(placa)
+        if not resultados and imagem_placa_preprocessada is not None:
+            invertida = cv2.bitwise_not(imagem_placa_preprocessada)
+            placa = extrai_placa_carro_ou_moto(_read(invertida))
+            if placa and placa not in resultados:
+                resultados.append(placa)
 
-        placa = ''
-        placa_moto = ["",""]
-        
-        for _, texto, _ in resultados_ocr:
-            #print("---------------------------------- Texto: " + texto)
-            texto = texto.upper().replace(" ", "").strip()
-            if 7 == len(texto) :
-                placa = texto
-                break
-            elif 3 == len(texto) :
-                placa_moto[0] = texto
-            elif 4  == len(texto) :
-                placa_moto[1] = texto
-            else :
-                continue
-
-        if  len(placa_moto[0]) == 3 and len(placa_moto[1]) == 4 :
-            placa = placa_moto[0] + placa_moto[1]
-
-        #print("---------------------------------- Placa: " + placa)
-
-        placa_formatada = validar_e_formatar_placa(placa)
-        if placa_formatada and placa_formatada not in placas_validadas:
-            placas_validadas.append(placa_formatada)
-    
-    
     except Exception as e:
         print(f"[ERRO OCR] Exceção durante o readtext ou processamento: {e}")
+        
+    placas_validadas = []
+    for txt in resultados:
+        p = validar_e_formatar_placa(txt)
+        placas_validadas.append(p)
+    
+    with open(ARQUIVO_PLACAS, 'a') as f:
+        for p in placas_validadas:
+            f.write(f"{nome_base_debug}_{contador_debug}: {p}\n")
 
-    
-    #with open(ARQUIVO_PLACAS, 'a') as f:
-        #for p in placas_validadas:
-            #f.write(f"{nome_base_debug}_{contador_debug}: {p}\n")
-    
-    #print(placas_validadas)
+    print(placas_validadas)
+
     return placas_validadas
