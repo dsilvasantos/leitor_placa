@@ -11,7 +11,7 @@ MODELO_CARRO_PATH = 'modelo_carro.pt'
 MODELO_PLACA_PATH = 'modelo_placa.pt'
 
 # Configurações do Tracker DeepSort
-DEEPSORT_MAX_AGE = 1 # tempo de vida de um ID após sumir do frame
+DEEPSORT_MAX_AGE = 5 # tempo de vida de um ID após sumir do frame
 
 # Configurações OCR
 OCR_ALLOWED_LIST = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'

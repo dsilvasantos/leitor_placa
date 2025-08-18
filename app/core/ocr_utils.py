@@ -172,13 +172,11 @@ def executar_ocr_em_roi(roi_placa_original, nome_base_debug, contador_debug):
         
     placas_validadas = []
     for txt in resultados:
-        p = validar_e_formatar_placa(txt)
-        placas_validadas.append(p)
+        placa = validar_e_formatar_placa(txt)
+        if placa and placa not in placas_validadas:
+            placas_validadas.append(placa)
     
-    with open(ARQUIVO_PLACAS, 'a') as f:
-        for p in placas_validadas:
-            f.write(f"{nome_base_debug}_{contador_debug}: {p}\n")
-
-    print(placas_validadas)
-
+    #with open(ARQUIVO_PLACAS, 'a') as f:
+    #    for p in placas_validadas:
+    #        f.write(f"{nome_base_debug}_{contador_debug}: {p}\n")
     return placas_validadas

@@ -252,7 +252,10 @@ def detectar_e_rastrear(frame_original):
         if track_id in tracks_com_ocr_submetido_neste_frame:
             continue
         
-
+        roi_veiculo = frame_original[y1_t:y2_t, x1_t:x2_t].copy()
+        
+        if roi_veiculo.size == 0:
+            continue
         
         # Debug: nome base para salvar imagens
         nome_base_debug = f"track{track_id}_frame{random.randint(1000,9999)}"
