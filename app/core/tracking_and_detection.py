@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timedelta
 from collections import defaultdict, Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
+import math
 from ultralytics import YOLO
 from deep_sort_realtime.deepsort_tracker import DeepSort
 
@@ -74,7 +74,7 @@ def limpar_variaveis_rastreamento(tracks):
         del contagem_placas_bloqueadas_por_veiculo[tid]
 
 
-def registrar_viculo(bbox_veiculo_abs,frame_para_desenho,placa,status):
+def registrar_veiculo(bbox_veiculo_abs,frame_para_desenho,placa,status):
     x1_car, y1_car, x2_car, y2_car = bbox_veiculo_abs 
     roi_veiculo_para_api = None 
     if frame_para_desenho is not None and x1_car < x2_car and y1_car < y2_car:
@@ -110,7 +110,7 @@ def processar_placa_identificada(placa_ocr, frame_para_desenho, bbox_veiculo_abs
     # Atualiza estado do veículo com base no status da placa
     if status_final_liberado:
         veiculos_liberados_rastreados.add(track_id_veiculo)
-        registrar_viculo(bbox_veiculo_abs,frame_para_desenho,placa_ocr,"LIBERADO")
+        registrar_veiculo(bbox_veiculo_abs,frame_para_desenho,placa_ocr,"LIBERADO")
         placas_associadas_veiculo[track_id_veiculo] = placa_ocr
         if track_id_veiculo in contagem_placas_bloqueadas_por_veiculo: # Limpa contagens anteriores se agora está liberado
             del contagem_placas_bloqueadas_por_veiculo[track_id_veiculo]
@@ -128,6 +128,60 @@ def processar_placa_identificada(placa_ocr, frame_para_desenho, bbox_veiculo_abs
     #print(f"{datetime.now()} - Veículo ID {track_id_veiculo} - Placa: {placa_ocr} - Status: {status_texto}")
 
 
+
+def _norm_dist_centro(bbox_xywh, W, H, foco_y=0.70):
+    # distância do centro do bbox até um ponto de foco (centro horizontal, 70% da altura)
+    x, y, w, h = bbox_xywh
+    cx, cy = x + w/2.0, y + h/2.0
+    fx, fy = W/2.0, H * foco_y
+    dist = math.hypot(cx - fx, cy - fy)
+    diag = math.hypot(W, H)
+    return min(1.0, dist / (diag + 1e-6))  # 0 = no foco, 1 = longe
+
+def escolher_melhor_veiculo(resultados_carros, frame):
+    H, W = frame.shape[:2]
+
+    melhor = None
+    melhor_score = -1.0
+
+    for res in resultados_carros:
+        for b in getattr(res, "boxes", []):
+            # extrai campos com segurança
+            cls  = int(b.cls[0]) if hasattr(b.cls, "__len__") else int(b.cls)
+            conf = float(b.conf[0]) if hasattr(b.conf, "__len__") else float(b.conf)
+
+
+            x1, y1, x2, y2 = map(int, b.xyxy[0].tolist() if hasattr(b.xyxy, "__len__") else b.xyxy)
+            
+            # clamp nos limites do frame
+            x1, y1 = max(0, x1), max(0, y1)
+            x2, y2 = min(W-1, x2), min(H-1, y2)
+
+            w, h = x2 - x1, y2 - y1
+            if w <= 0 or h <= 0:
+                continue
+
+            area = w * h
+
+            # features normalizadas
+            area_norm = min(1.0, area / float(W * H))
+            dist_norm = _norm_dist_centro((x1, y1, w, h), W, H, foco_y=0.70)
+
+            # score composto: ajuste pesos conforme seu cenário
+            score = (0.30 * conf) + (0.70 * area_norm) + (0.10 * (1.0 - dist_norm))
+
+            if score > melhor_score:
+                melhor_score = score
+                melhor = ((x1, y1, w, h), conf, area, cls)
+
+    if not melhor:
+        return None, None  # sem veículo válido
+
+    # recorta ROI e retorna também dados úteis
+    (x, y, w, h), conf, area, cls = melhor
+    roi = frame[y:y+h, x:x+w]
+    return roi, (x, y, w, h), conf, cls
+
 def detectar_e_rastrear(frame_original):
     """
     Função principal de detecção e rastreamento.
@@ -144,66 +198,37 @@ def detectar_e_rastrear(frame_original):
     limpar_cache_expirado_placas()
     roi_veiculo = frame_original
     frame_processamento = frame_original.copy()
-    
+
     # 1. Detecção de veículos
-    resultados_carros = modelo_carro(frame_processamento, conf=0.3, verbose=False) # Reduzir verbosidade
+    resultados_carros = modelo_carro.predict(
+       source=frame_processamento,
+       imgsz=960,          # ↑ resolução ajuda carro distante/pequeno (720/960/1280)
+       conf=0.25,          # ↓ limiar aumenta recall; filtre depois por área/razão
+       iou=0.65,           # NMS menos agressivo (0.6~0.7 costuma ser bom)
+       classes=[2, 3, 5, 7],        # COCO: 2=car (ou adapte ao seu mapeamento/custom)
+       agnostic_nms=True,  # evita supressão entre classes diferentes
+       max_det=300,
+       augment=True,       # TTA (flip/scale) → recall ↑ (custa FPS)
+       half=True,          # FP16 na GPU (mesma acurácia, mais rápido)
+       device=0,
+       verbose=False
+       )
     
     deteccoes_para_tracker = []
     map_bbox_original_veiculo = {} 
-    IDS_VEICULOS_INTERESSE = {2, 3, 5, 7} # carro, moto, onibus, caminhao
 
-    altura_frame, largura_frame = frame_original.shape[:2]
-    centro_frame_x = largura_frame // 2
-    centro_frame_y = altura_frame // 2
-
-    def distancia_do_centro(bbox):
-        x1, y1, w, h = bbox
-        cx = x1 + w // 2
-        cy = y1 + h // 2
-        return ((cx - centro_frame_x) ** 2 + (cy - centro_frame_y) ** 2) ** 0.5
-
-    veiculos_detectados = []
-    for res_carro in resultados_carros:
-        for box in res_carro.boxes:
-            try:
-                cls = int(box.cls[0]) if hasattr(box.cls, '__getitem__') else int(box.cls)
-                conf = float(box.conf[0]) if hasattr(box.conf, '__getitem__') else float(box.conf)
-
-                if cls in IDS_VEICULOS_INTERESSE:
-                    coords = box.xyxy[0] if hasattr(box.xyxy, '__getitem__') else box.xyxy
-                    x1, y1, x2, y2 = map(int, coords)
-                    largura = x2 - x1
-                    altura = y2 - y1
-                    area = largura * altura
-
-                    if largura > 0 and altura > 0:
-                        veiculos_detectados.append(((x1, y1, largura, altura), conf, area, cls))
-            except Exception as e:
-                print(f"Erro ao processar caixa de detecção: {e}")
-                continue
-
-    veiculos_detectados.sort(key=lambda x: (distancia_do_centro(x[0]), -x[2]))
-
-    if veiculos_detectados: 
-        bbox_data, conf, area, classe_id = veiculos_detectados[0]
-        x1_veiculo, y1_veiculo, largura_veiculo, altura_veiculo = bbox_data
-        x2_veiculo = x1_veiculo + largura_veiculo
-        y2_veiculo = y1_veiculo + altura_veiculo
-
-        x1_roi = max(0, x1_veiculo)
-        y1_roi = max(0, y1_veiculo)
-        x2_roi = min(largura_frame, x2_veiculo)
-        y2_roi = min(altura_frame, y2_veiculo)
-
-        if x1_roi < x2_roi and y1_roi < y2_roi:
-            roi_veiculo = frame_original[y1_roi:y2_roi, x1_roi:x2_roi]
+    
+    if resultados_carros: 
+        ret = escolher_melhor_veiculo(resultados_carros,frame_processamento)
+        if ret and ret[0] is not None:
+            roi_veiculo, (x, y, w, h), conf, cls = ret
+            deteccoes_para_tracker.append(((x, y, w, h), conf, "veiculo_generico", cls))
         else:
             roi_veiculo = None
-
-        deteccoes_para_tracker.append((bbox_data, conf, "veiculo_generico", classe_id))
     else:
         roi_veiculo = None
 
+   
     # 2. Atualização do rastreador DeepSort
     tracks = tracker.update_tracks(deteccoes_para_tracker, frame=frame_processamento)
 
@@ -219,13 +244,13 @@ def detectar_e_rastrear(frame_original):
     tracks_com_ocr_submetido_neste_frame = set()
 
     for track in tracks:
-        if not track.is_confirmed():
-            continue
+        #if not track.is_confirmed():
+        #    continue
 
         track_id = track.track_id
         x1_t, y1_t, x2_t, y2_t = map(int, track.to_ltrb()) 
         map_bbox_original_veiculo[track_id] = (x1_t, y1_t, x2_t, y2_t)
-               
+        '''''
         # Se o veículo já foi liberado, apenas desenha o status e continua
         if track_id in veiculos_liberados_rastreados:
             placa = placas_associadas_veiculo.get(track_id, "N/A")
@@ -242,17 +267,17 @@ def detectar_e_rastrear(frame_original):
             placa_mais_frequente_bloqueada, _ = contagem.most_common(1)[0]
             if track_id not in veiculos_bloqueados_registrados:
                 veiculos_bloqueados_registrados.add(track_id)
-                registrar_viculo(map_bbox_original_veiculo[track_id],frame_original,placa_mais_frequente_bloqueada,"BLOQUEADO")
+                registrar_veiculo(map_bbox_original_veiculo[track_id],frame_original,placa_mais_frequente_bloqueada,"BLOQUEADO")
             cv2.rectangle(frame_original, (x1_t, y1_t), (x2_t, y2_t), (0, 0, 255), 2)
             cv2.putText(frame_original, f"{placa_mais_frequente_bloqueada} - BLOQUEADO (RASTREADO)", (x1_t, y1_t - 10),
             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
             continue 
         
-
+        
         if track_id in tracks_com_ocr_submetido_neste_frame:
             continue
         
-        roi_veiculo = frame_original[y1_t:y2_t, x1_t:x2_t].copy()
+        '''
         
         if roi_veiculo.size == 0:
             continue
@@ -262,18 +287,10 @@ def detectar_e_rastrear(frame_original):
         #img_proc.salvar_imagem_debug("carro_original", frame_processamento, nome_base_debug, 0)
         #img_proc.salvar_imagem_debug("carro_original2", roi_veiculo, nome_base_debug, 0)
 
-        # Ajuste de brilho no ROI do veículo (opcional, pode ser feito no ROI da placa)
-        brilho_roi_veiculo = img_proc.verificar_brilho(roi_veiculo)
-        roi_veiculo_ajustado = roi_veiculo
-        if brilho_roi_veiculo < config.BRILHO_MINIMO_NOTURNO:
-            roi_veiculo_ajustado = img_proc.melhorar_visao_noturna(roi_veiculo)
-            #img_proc.salvar_imagem_debug("carro_noturno", roi_veiculo_ajustado, nome_base_debug, 0)
-        elif brilho_roi_veiculo > config.BRILHO_MAXIMO_CLARO:
-            roi_veiculo_ajustado = img_proc.melhorar_visao_clara(roi_veiculo)
-            #img_proc.salvar_imagem_debug("carro_claro", roi_veiculo_ajustado, nome_base_debug, 0)
-
+    
         # Detecção de placas no ROI do veículo ajustado
-        resultados_roi_placa = modelo_placa(roi_veiculo_ajustado, conf=config.CONFIANCA_MODELO_PLACA, verbose=False) 
+        resultados_roi_placa = modelo_placa(roi_veiculo, conf=config.CONFIANCA_MODELO_PLACA, verbose=False) 
+
 
         placa_idx_counter = 0
         for res_placa in resultados_roi_placa:
@@ -282,12 +299,12 @@ def detectar_e_rastrear(frame_original):
                 x1p_rel, y1p_rel, x2p_rel, y2p_rel = map(int, box_placa.xyxy[0])
                 
 
-                roi_placa_efetivo = roi_veiculo_ajustado[y1p_rel:y2p_rel, x1p_rel:x2p_rel]
+                roi_placa_efetivo = roi_veiculo[y1p_rel:y2p_rel, x1p_rel:x2p_rel]
 
                 if roi_placa_efetivo.size == 0:
                     continue
                 
-                # img_proc.salvar_imagem_debug("placa_original_roi", roi_placa_efetivo, nome_base_debug, placa_idx_counter)
+                #img_proc.salvar_imagem_debug("placa_original_roi", roi_placa_efetivo, nome_base_debug, placa_idx_counter)
 
                 # Submete a tarefa de OCR para o ThreadPoolExecutor
                 # Passa o ROI da placa original, track_id, e o bbox original do veículo
