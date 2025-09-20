@@ -2,6 +2,7 @@
 
 import easyocr
 import re
+import os
 import core.config as config
 import torch
 from core.image_processing_utils import preprocessar_roi_placa #, salvar_imagem_debug
@@ -11,17 +12,32 @@ import cv2
 ARQUIVO_PLACAS = config.ARQUIVO_PLACAS
 open(ARQUIVO_PLACAS, 'w').close()
 
+
+MODELS_DIR = "./models"
+
 # Inicializa o reader do EasyOCR uma vez quando o módulo é carregado
 try:
     print("Inicializando EasyOCR Reader com GPU...")
-    reader_ocr = easyocr.Reader(['pt'], gpu=True, detect_network="craft", verbose=False)
+    reader_ocr = easyocr.Reader(
+    ['pt'], 
+    gpu=True,
+    model_storage_directory=MODELS_DIR,
+    download_enabled=not os.path.exists(MODELS_DIR), 
+    recog_network='english_g2',
+    ) 
     print(torch.cuda.get_device_name(0))
     print("EasyOCR Reader inicializado com GPU.")
 except Exception as e:
     print(f"Erro ao inicializar EasyOCR: {e}")
     print("Tentando inicializar EasyOCR com GPU=False.")
     try:
-        reader_ocr = easyocr.Reader(['pt'], gpu=False, detect_network="craft", verbose=False)
+        reader_ocr = reader_ocr = easyocr.Reader(
+    ['pt'], 
+    gpu=True,
+    model_storage_directory=MODELS_DIR,
+    download_enabled=not os.path.exists(MODELS_DIR), 
+    recog_network='english_g2',
+    ) 
         print("EasyOCR Reader inicializado com CPU.")
     except Exception as e_cpu:
         print(f"Erro fatal ao inicializar EasyOCR com CPU: {e_cpu}")
@@ -29,8 +45,8 @@ except Exception as e:
 
 
 def substituir_caracteres_similares_letras(texto):
-    """Corrige letras que podem ser confundidas com números (ex: O -> 0)."""
-    substituicoes = {'0': 'O', '1': 'I', '5': 'S', '8': 'B'}
+    """Corrige letras que podem ser confundidas com números (ex: 0 -> 0)."""
+    substituicoes = {'0': 'O', '1': 'I', '5': 'S', '8': 'B', '2': 'Z', '4': 'A', '6': 'G'}
     texto_corrigido = list(texto)
     # Aplica somente nos 3 primeiros caracteres (letras)
     for i in range(min(3, len(texto_corrigido))):
@@ -40,7 +56,7 @@ def substituir_caracteres_similares_letras(texto):
 
 def substituir_caracteres_similares_numeros(texto):
     """Corrige números que podem ser confundidas com letras (ex: O -> 0)."""
-    substituicoes = {'O': '0', 'I': '1', 'S': '5', 'B': '8'}
+    substituicoes = {'O': '0', 'I': '1', 'S': '5', 'B': '8', 'Z': '2', 'A': '4', 'G': '6'}
     texto_corrigido = list(texto)
 
     indices_numeros_trad = [3, 4, 5, 6]
@@ -105,7 +121,6 @@ def validar_e_formatar_placa(texto_ocr):
     
     return None
 
-
 def extrai_placa_carro_ou_moto(resultados_ocr):
     
     if not resultados_ocr:
@@ -116,10 +131,11 @@ def extrai_placa_carro_ou_moto(resultados_ocr):
         
     for _, texto, _ in resultados_ocr:
         texto = texto.upper().replace(" ", "").strip()
+        print("----------------------------" + texto)
         if 7 == len(texto) :
             placa = texto
             break
-        elif 3 == len(texto) :
+        elif len(texto) == 3 and re.fullmatch(r'[A-Z]{3}', texto):
             placa_moto[0] = texto
         elif 4  == len(texto) :
             placa_moto[1] = texto
@@ -145,9 +161,9 @@ def executar_ocr_em_roi(roi_placa_original, nome_base_debug, contador_debug):
         return []
 
     imagem_placa_preprocessada = preprocessar_roi_placa(roi_placa_original, nome_base_debug, contador_debug)
-
+    
     def _read(img):
-        return reader_ocr.readtext(img, allowlist=config.OCR_ALLOWED_LIST, paragraph=False)
+        return reader_ocr.readtext(img, allowlist=config.OCR_ALLOWED_LIST, decoder='beamsearch', beamWidth=10,detail=1)
 
     resultados = []
 

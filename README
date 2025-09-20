@@ -1,1 +1,138 @@
-https://developer.nvidia.com/cuda-toolkit
+# 📸🔎 Leitor de Placas (ANPR) — YOLO + EasyOCR + Deep SORT
+
+Sistema de **Reconhecimento Automático de Placas Veiculares (ANPR)** em Python que:
+- Detecta **veículos** e **placas** com **YOLO (Ultralytics)**
+- Lê os caracteres da placa com **EasyOCR**
+- Rastreia múltiplos alvos com **Deep SORT**
+- Integra com uma **API** para verificar/liberar/bloquear e registrar capturas
+
+> Este README cobre **instalação**, **execução** e **desinstalação** via scripts `.bat`, além de uma observação sobre uso de **GPU/CUDA**.
+
+---
+
+## 🧭 Sumário
+- [Como funciona (visão geral)](#-como-funciona-visão-geral)
+- [Requisitos](#-requisitos)
+- [Instalação com `instala.bat`](##instalação-com-instala.bat)
+- [Execução com `iniciar.bat`](#-execução-com-iniciarbat)
+- [Desinstalação com `desinstala.bat`](#-desinstalação-com-desinstalabat)
+- [Configurações importantes](#-configurações-importantes)
+- [Observação sobre GPU/CUDA](#-observação-sobre-gpucuda)
+- [Solução de problemas](#-solução-de-problemas)
+
+---
+
+## 🧠 Como funciona (visão geral)
+
+1. **YOLO (veículos)** — detecta carros/motos/ônibus/caminhões no frame.
+2. **Deep SORT** — rastreia os veículos detectados (IDs persistentes).
+3. **YOLO (placa por track)** — recorta o ROI de cada veículo rastreado e detecta a **placa** dentro desse ROI.
+4. **EasyOCR** — lê os caracteres da placa com pré-processamento adaptativo (noite/dia).
+5. **API** — verifica se a placa está **liberada** ou **bloqueada**; registra a captura e o recorte do veículo.
+6. **Overlay** — desenha retângulos e o status sobre o vídeo.
+
+---
+
+## ✅ Requisitos
+
+- **Windows 10/11**
+- **Python 3.10+** (recomendado)
+- Webcam ou fonte de vídeo/RTSP (opcional)
+- A API de verificação/registro acessível (URL configurável no `core/config.py`)
+
+> Todo o processo de instalação/execução/desinstalação é feito via scripts `.bat`.
+
+---
+
+## ⚙️ Instalação com instala.bat
+
+1. **Baixe/clone** este repositório (ex.: `C:\Projetos\TCC\leitor_placa`).
+2. **Clique duas vezes** em `instala.bat` (ou execute no Prompt de Comando dentro da pasta do projeto):
+   ```bat
+   .\instala.bat
+   ```
+3. O script prepara o ambiente (ex.: cria venv e instala dependências).
+
+> Caso o Windows/antivírus exiba algum prompt, permita a execução do script.
+
+---
+
+## ▶️ Execução com `iniciar.bat`
+
+Após instalar:
+
+```bat
+.\iniciar.bat
+```
+
+- O script inicia o aplicativo principal (captura de vídeo → detecção → rastreamento → OCR).
+- Logs/infos aparecem no console.
+- Para parar, **Aparte 'Q'** ou use **Ctrl+C** no console.
+
+---
+
+## 🧹 Desinstalação com `desinstala.bat`
+
+Para remover o ambiente/dependências criados pelos scripts:
+
+```bat
+.\desinstala.bat
+```
+
+> Útil quando quiser “começar do zero” ou atualizar o ambiente.
+
+---
+
+## 🔧 Configurações importantes
+
+Edite `core/config.py` para ajustar as principais chaves (exemplos):
+
+```python
+MODELO_CARRO_PATH = "models/modelo_carro.pt"
+MODELO_PLACA_PATH = "models/modelo_placa.pt"
+
+CONFIANCA_MODELO_CARRO = 0.30
+CONFIANCA_MODELO_PLACA = 0.35
+
+BRILHO_MINIMO_NOTURNO = 60
+BRILHO_MAXIMO_CLARO   = 190
+
+OCR_MAX_WORKERS = 6
+OCR_COOLDOWN_S  = 0.6
+MIN_TRACK_SIDE  = 32
+MIN_PLATE_SIDE  = 24
+
+DEEPSORT_MAX_AGE            = 30
+LIMPEZA_VARIAVEIS_GLOBAIS   = 120
+TTL_SEGUNDOS_CACHE_PLACA    = 120
+
+API_BASE_URL = "http://localhost:8000/api"
+```
+
+- **Pesos** (`.pt`) devem estar nos caminhos definidos (ex.: pasta `models/`).
+- Ajuste as **confianças** e mínimos de ROI para equilibrar FPs/FNs.
+- **API_BASE_URL**: aponte para o seu serviço de verificação/registro.
+
+---
+
+## 🖥️ Observação sobre GPU/CUDA
+
+Se o computador **tem GPU NVIDIA** e você deseja acelerar a inferência:
+
+1. **Baixe e instale o CUDA Toolkit** no **site oficial da NVIDIA**.
+2. Garanta que o **driver NVIDIA** esteja atualizado.
+3. Instale o **PyTorch** com suporte à **CUDA** compatível com o seu CUDA Toolkit (siga as instruções no site do PyTorch).
+
+> Se não tiver GPU, tudo funciona em **CPU** — apenas mais lentamente.
+
+---
+
+## 🛠️ Solução de problemas
+
+- **Câmera não abre** → verifique se outra aplicação está usando a webcam.
+- **Torch não usa GPU** → instale CUDA Toolkit + PyTorch com CUDA compatível; reinicie o terminal.
+- **Aviso `pkg_resources is deprecated` (Deep SORT)** → é apenas *warning* de dependência; pode ser ignorado.
+- **Erro na API** → confira `API_BASE_URL` e se o serviço está ativo e acessível.
+
+---
+

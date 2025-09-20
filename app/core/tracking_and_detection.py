@@ -99,14 +99,19 @@ def processar_placa_identificada(placa_ocr, frame_para_desenho, bbox_veiculo_abs
     status_final_liberado = False
     x1_car, y1_car, _, _ = bbox_veiculo_abs # Usar para posicionar texto/retângulo
 
+
     # Verifica cache ou API
     if placa_ocr in placas_detectadas_recentemente:
         status_final_liberado, _ = placas_detectadas_recentemente[placa_ocr]
     else:
         timestamp_atual = datetime.now()
         status_final_liberado = api_client.verificar_placa_api(placa_ocr, config.API_BASE_URL)
-        placas_detectadas_recentemente[placa_ocr] = (status_final_liberado, timestamp_atual)
+    #-------- Remove
+        #placas_detectadas_recentemente[placa_ocr] = (status_final_liberado, timestamp_atual)
+    #-------- Remove
 
+    
+    #-------- Remove
     # Atualiza estado do veículo com base no status da placa
     if status_final_liberado:
         veiculos_liberados_rastreados.add(track_id_veiculo)
@@ -116,7 +121,8 @@ def processar_placa_identificada(placa_ocr, frame_para_desenho, bbox_veiculo_abs
             del contagem_placas_bloqueadas_por_veiculo[track_id_veiculo]
     else:
         contagem_placas_bloqueadas_por_veiculo[track_id_veiculo].append(placa_ocr)
-
+    #-------- Remove
+    
 
     status_texto = "LIBERADO" if status_final_liberado else "BLOQUEADO"
     cor_retangulo = (0, 255, 0) if status_final_liberado else (0, 0, 255)
@@ -182,6 +188,13 @@ def escolher_melhor_veiculo(resultados_carros, frame):
     roi = frame[y:y+h, x:x+w]
     return roi, (x, y, w, h), conf, cls
 
+def expand_bbox(x1,y1,x2,y2, scale, w_max, h_max):
+    cx = (x1 + x2)/2; cy = (y1 + y2)/2
+    nw = (x2 - x1) * scale; nh = (y2 - y1) * scale
+    nx1 = max(0, int(cx - nw/2)); ny1 = max(0, int(cy - nh/2))
+    nx2 = min(w_max, int(cx + nw/2)); ny2 = min(h_max, int(cy + nh/2))
+    return nx1, ny1, nx2, ny2
+
 def detectar_e_rastrear(frame_original):
     """
     Função principal de detecção e rastreamento.
@@ -244,13 +257,17 @@ def detectar_e_rastrear(frame_original):
     tracks_com_ocr_submetido_neste_frame = set()
 
     for track in tracks:
-        #if not track.is_confirmed():
-        #    continue
+    #-------- Remove
+        if not track.is_confirmed():
+            continue
+    #-------- Remove
 
         track_id = track.track_id
         x1_t, y1_t, x2_t, y2_t = map(int, track.to_ltrb()) 
         map_bbox_original_veiculo[track_id] = (x1_t, y1_t, x2_t, y2_t)
-        '''''
+        
+        
+        #-------- Remove
         # Se o veículo já foi liberado, apenas desenha o status e continua
         if track_id in veiculos_liberados_rastreados:
             placa = placas_associadas_veiculo.get(track_id, "N/A")
@@ -276,9 +293,13 @@ def detectar_e_rastrear(frame_original):
         
         if track_id in tracks_com_ocr_submetido_neste_frame:
             continue
+        #-------- Remove
         
-        '''
         
+
+        h, w = frame_processamento.shape[:2]
+        x1p,y1p,x2p,y2p = expand_bbox(x1_t, y1_t, x2_t, y2_t, 1.03, w, h)  # +7%
+        roi_veiculo = frame_processamento[ y1p:y2p, x1p:x2p]
         if roi_veiculo.size == 0:
             continue
         
@@ -289,17 +310,25 @@ def detectar_e_rastrear(frame_original):
 
     
         # Detecção de placas no ROI do veículo ajustado
-        resultados_roi_placa = modelo_placa(roi_veiculo, conf=config.CONFIANCA_MODELO_PLACA, verbose=False) 
+        #resultados_roi_placa = modelo_placa(roi_veiculo, conf=config.CONFIANCA_MODELO_PLACA, verbose=False)
+        
+        resultados_roi_placa = modelo_placa(
+        roi_veiculo,
+        conf=config.CONFIANCA_MODELO_PLACA,  # p.ex 0.30–0.40
+        iou=0.6,
+        max_det=3,
+        agnostic_nms=False,
+        augment=False,            # teste True se estiver “no limite”
+        verbose=False)
 
 
         placa_idx_counter = 0
         for res_placa in resultados_roi_placa:
             for box_placa in res_placa.boxes:
-                # Coordenadas da placa relativas ao ROI do veículo
-                x1p_rel, y1p_rel, x2p_rel, y2p_rel = map(int, box_placa.xyxy[0])
-                
-
-                roi_placa_efetivo = roi_veiculo[y1p_rel:y2p_rel, x1p_rel:x2p_rel]
+                x1p,y1p,x2p,y2p = map(int, box_placa.xyxy[0])
+                h, w = roi_veiculo.shape[:2]
+                x1p,y1p,x2p,y2p = expand_bbox(x1p,y1p,x2p,y2p, 1.03, w, h)  # +7%
+                roi_placa_efetivo = roi_veiculo[y1p:y2p, x1p:x2p]
 
                 if roi_placa_efetivo.size == 0:
                     continue
@@ -314,7 +343,11 @@ def detectar_e_rastrear(frame_original):
                     "bbox_veiculo": (x1_t, y1_t, x2_t, y2_t) # bbox do veículo no frame original
                 }
                 ocr_tasks_ativas.append(future)
+                
+                 #-------- Remove
                 tracks_com_ocr_submetido_neste_frame.add(track_id) # Marca que este track_id já teve OCR submetido
+                 #-------- Remove             
+                 
                 placa_idx_counter +=1
 
 

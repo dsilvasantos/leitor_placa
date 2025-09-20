@@ -11,7 +11,7 @@ MODELO_CARRO_PATH = 'modelo_carro.pt'
 MODELO_PLACA_PATH = 'modelo_placa.pt'
 
 # Configurações do Tracker DeepSort
-DEEPSORT_MAX_AGE = 5 # tempo de vida de um ID após sumir do frame
+DEEPSORT_MAX_AGE = 6 # tempo de vida de um ID após sumir do frame
 
 # Configurações OCR
 OCR_ALLOWED_LIST = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
@@ -21,8 +21,8 @@ OCR_ALLOWED_LIST = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
 CAMERA_INDEX = 0 # Ou o caminho para um arquivo de vídeo
 
 # Limites de pré-processamento
-BRILHO_MINIMO_NOTURNO = 65
-BRILHO_MAXIMO_CLARO = 150
+BRILHO_MINIMO_NOTURNO = 30
+BRILHO_MAXIMO_CLARO = 190
 ROI_PLACA_MIN_ALTURA = 100
 ROI_PLACA_MIN_LARGURA = 300
 

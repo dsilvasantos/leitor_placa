@@ -76,7 +76,7 @@ def processar_imagens_pasta():
     tempos_de_execucao = []
     qtde_exec = 0
     for nome_arquivo in os.listdir(config.CAMERA_INDEX):
-        if nome_arquivo.lower().endswith((".jpg", ".jpeg", ".png")):
+        if nome_arquivo.lower().endswith((".jpg", ".jpeg", ".png",".webp")):
             try:
                 caminho_imagem = os.path.join(config.CAMERA_INDEX, nome_arquivo)
                 print(f"\n --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ")
